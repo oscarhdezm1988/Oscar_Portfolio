@@ -1,0 +1,249 @@
+---
+title: "Jackson Heart Study (JHS) analysis of the best model"
+author: "Oscar Hernandez Mata"
+format: html
+self-contained: true
+execute:
+  echo: true
+  warning: false
+---
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(haven)
+library(haven)
+analysis1 <- read_sas("analysis1.sas7bdat", 
+    NULL)
+library(ggplot2)
+library(fastDummies)
+library(data.table)
+library(equatiomatic)
+library(lindia)
+library(car)
+library(sjPlot)
+library(nnet)
+library(lmtest)
+library(AER)
+library(mlogit)
+library(MASS)
+library(brant)
+library(boot)
+library(tictoc)
+library(caret)
+library(ordinal)
+```
+
+#### 1. I used leave-one-out cross validation to determine which model fit better:
+
+#### 2. Systolic blood pressure (*sbp*; mmHg) as a function of age (*age*; years), education (*HSgrad*; 0=no, 1=yes), diabetic status (*diab3cat*; 0=non-diabetic, 1=pre-diabetic, 2=diabetic), body mass index (*bmi*, kg/m2), the interaction between diabetic status and age, and the interaction between diabetic status and education.
+
+```{r, echo = TRUE}
+data1=analysis1%>%dplyr::select(
+sbp,
+age,
+HSgrad,
+diab3cat,
+BMI,
+Diabetes,
+weight,
+HTN,
+hdl3cat
+)%>%
+  na.omit()
+
+data1$diab3cat=as.factor(data1$diab3cat)
+
+m1=glm(sbp~age+HSgrad+diab3cat+BMI+diab3cat:age+diab3cat:HSgrad, data=data1)
+summary(m1)
+```
+
+#### 3. Systolic blood pressure (*sbp*; mmHg) as a function of age (*age*; years), education (*HSgrad*; 0=no, 1=yes), diabetic status (*diab3cat*; 0=non-diabetic, 1=pre-diabetic, 2=diabetic), body mass index (*bmi*, kg/m2).
+
+```{r, echo = TRUE}
+m2=glm(sbp~age+HSgrad+diab3cat+BMI, data=data1)
+summary(m2)
+
+set.seed(45)
+cv_error <- cv.glm(data1, m1)
+cv_error$delta
+
+set.seed(45)
+cv_error <- cv.glm(data1, m2)
+cv_error$delta
+```
+We calculated the CV(n) of models 1 and 2 (m1=211.3789 211.3785; m2=211.6515 211.6512). In this case m1 CV(n) < m2 CV(n). Thus, we can conclude that m1 fits better than m2. 
+
+#### 4. Diabetic status (*Diabetes*; 0=non-diabetic, 1=diabetic) as a function of age (*age*; years), weight (*weight*; kg), hypertension status (*HTN*; 0=normotensive, 1=hypertensive), health status as indicated by high density lipoproteins (*hdl3cat*; 0=poor health, 1=intermediate health, 2=ideal health), the interaction between weight and hypertension status, the interaction between weight and age, and the interaction between weight and health status as indicated by high density lipoproteins.
+
+```{r, echo = TRUE}
+data1$hdl3cat=as.factor(data1$hdl3cat)
+m3=glm(Diabetes~age+weight+HTN+hdl3cat+weight:HTN+weight:age+weight:hdl3cat, data=data1, family = "binomial")
+summary(m3)
+m4=glm(Diabetes~age+weight+HTN+hdl3cat, data=data1, family = "binomial")
+summary(m4)
+```
+Note: I created the required model plus an alternative model without the interactions to check which model fit better.  
+
+#### 5.  2-fold cross validation.
+
+```{r, echo = TRUE}
+tic()
+set.seed(80)
+cv_errorm3k2 <- cv.glm(data1, m3, K=2)
+cv_errorm3k2$delta
+
+set.seed(80)
+cv_errorm4k2 <- cv.glm(data1, m4, K=2)
+cv_errorm4k2$delta
+toc()
+
+cv_errorm3k2$delta>cv_errorm4k2$delta
+
+```
+We calculated the CV(k=2) for m3 and m4 (m3=0.1284546 0.1277512, m4=0.1287157 0.1281067) at a set seed of 80. In this case m3 CV(k=2) < m4 CV(k=2). Thus, we conclude that m3 is better fit than m4. 
+
+#### 6. 5-fold cross validation.
+
+```{r, echo = TRUE}
+tic()
+set.seed(80)
+cv_errorm3k5<- cv.glm(data1, m3, K=5)
+cv_errorm3k5$delta
+
+set.seed(80)
+cv_errorm4k5 <- cv.glm(data1, m4, K=5)
+cv_errorm4k5$delta
+toc()
+
+cv_errorm3k5$delta>cv_errorm4k5$delta
+```
+I calculated the CV(k=5) for m3 and m4 (m3=0.1276897 0.1275400, m4=0.1277556 0.1276539) at a set seed of 80. In this case m3 CV(k=5) < m4 CV(k=5). Thus, I concluded that m3 is better fit than m4. 
+
+#### 7. 10-fold cross validation.
+
+```{r, echo = TRUE}
+tic()
+set.seed(80)
+cv_errorm3k10 <- cv.glm(data1, m3, K=10)
+cv_errorm3k10$delta
+
+set.seed(80)
+cv_errorm4k10 <- cv.glm(data1, m4, K=10)
+cv_errorm4k10$delta
+toc()
+
+cv_errorm3k10$delta>cv_errorm4k10$delta
+```
+I calculated the CV(k=10) for m3 and m4 (m3=0.1276424 0.1275762, m4=0.1277778 0.1277304) at a set seed of 80. In this case m3 CV(k=10) < m4 CV(k=10). Thus, I concluded that m3 is better fit than m4.
+
+#### 8. 25-fold cross validation.
+
+```{r, echo = TRUE}
+tic()
+set.seed(80)
+cv_errorm3k25 <- cv.glm(data1, m3, K=25)
+cv_errorm3k25$delta
+
+set.seed(80)
+cv_errorm4k25 <- cv.glm(data1, m4, K=25)
+cv_errorm4k25$delta
+toc()
+
+cv_errorm3k25$delta>cv_errorm4k25$delta
+```
+I calculated the CV(k=25) for m3 and m4 (m3=0.1275292 0.1275048, m4=0.1275060 0.1274928) at a set seed of 80. In this case m3 CV(k=25) > m4 CV(k=25). Thus, I concluded that m4 is better fit than m3.
+
+#### 9. 50-fold cross validation.
+
+```{r, echo = TRUE}
+tic()
+set.seed(80)
+cv_errorm3k50 <- cv.glm(data1, m3, K=50)
+cv_errorm3k50$delta
+
+set.seed(80)
+cv_errorm4k50 <- cv.glm(data1, m4, K=50)
+cv_errorm4k50$delta
+toc()
+
+cv_errorm3k50$delta>cv_errorm4k50$delta
+```
+I calculated the CV(k=50) for m3 and m4 (m3=0.1276650 0.1276517, m4=0.1275060 0.1274928) at a set seed of 80. In this case m3 CV(k=50) > m4 CV(k=50). Thus, I concluded that m4 is better fit than m3.
+
+#### 10.  100-fold cross validation.
+
+```{r, echo = TRUE}
+tic()
+set.seed(80)
+cv_errorm3k100 <- cv.glm(data1, m3, K=100)
+cv_errorm3k100$delta
+
+set.seed(80)
+cv_errorm4k100 <- cv.glm(data1, m4, K=100)
+cv_errorm4k100$delta
+toc()
+
+cv_errorm3k100$delta>cv_errorm4k100$delta
+```
+I calculated the CV(k=100) for m3 and m4 (m3=0.1276038 0.1275974, m4=0.1275948 0.1275912) at a set seed of 80. In this case m3 CV(k=100) > m4 CV(k=100). Thus, I conclude that m4 is better fit than m3.
+
+Note: As the number of k groups or folds increased the CV(k) in general decreased.This is because the model is trained on a bigger training group and tested on a smaller test group. Therefore, the performance of the model will likely have a higher confidence in the cross validation and thus will be more accurate as the folds increase. In our example, the CV(k=2) > CV(k=100). On the other hand, the processing time increased as the k groups or folds increased. This is because the model will be trained in a larger amount of folds, resulting in more time to compute.  
+
+#### 11. I used 25-fold cross validation to determine which model fit better:
+
+#### 12. Number of ideal health indicators (use blood pressure (*idealHealthBP*; 1=ideal health, 0=not ideal health), smoking status (*idealHealthSMK*; 1=ideal health, 0=not ideal health), diabetes (*idealHealthDM*; 1=ideal health, 0=not ideal health), diet  (idealHealthNutrition; 1=ideal health, 0=not ideal health), physical activity (*idealHealthPA*; 1=ideal health, 0=not ideal health), obesity  (*idealHealthBMI*; 1=ideal health, 0=not ideal health), and high cholesterol  (*idealHealthChol*; 1=ideal health, 0=not ideal health)) as a function of age (*age*; years), health insurance (*PrivatePublicIns*; 0=uninsured, 1=private insurance only, 2=public insurance only, 3=private and public insurances), education status (*HSgrad*; 0=did not graduate high school, 1=graduated high school), and the interaction between age and health insurance.
+
+```{r, echo = TRUE}
+data2=analysis1%>%dplyr::select(
+  age,
+  PrivatePublicIns,
+  HSgrad,
+  idealHealthBP,
+  idealHealthSMK,
+  idealHealthDM,
+  idealHealthNutrition,
+  idealHealthPA,
+  idealHealthBMI,
+  idealHealthChol
+  )%>%
+  na.omit()
+
+
+data2 = data2 %>% 
+  mutate(ideal_health_indicators = rowSums(dplyr::select(., idealHealthBP:idealHealthChol) == 1, na.rm = TRUE))
+
+#count(data2, ideal_health_indicators)
+
+mean(data2$ideal_health_indicators)
+var(data2$ideal_health_indicators)
+
+hist(data2$ideal_health_indicators)
+
+data2$PrivatePublicIns=as.factor(data2$PrivatePublicIns)
+
+m5 = glm.nb(ideal_health_indicators ~ age + PrivatePublicIns + HSgrad+age:PrivatePublicIns, data=data2)
+summary(m5)
+
+```
+Note: The count function is giving error. I removed the dplyr package and reinstalled it and it's still not working unless I use data2$ideal_health_indicators. However, if I use this code it will not render in the end.  
+
+#### 13. Number of ideal health indicators (use blood pressure (*idealHealthBP*; 1=ideal health, 0=not ideal health), smoking status (*idealHealthSMK*; 1=ideal health, 0=not ideal health), diabetes (*idealHealthDM*; 1=ideal health, 0=not ideal health), diet  (idealHealthNutrition; 1=ideal health, 0=not ideal health), physical activity (*idealHealthPA*; 1=ideal health, 0=not ideal health), obesity  (*idealHealthBMI*; 1=ideal health, 0=not ideal health), and high cholesterol  (*idealHealthChol*; 1=ideal health, 0=not ideal health)) as a function of age (*age*; years), health insurance (*PrivatePublicIns*; 0=uninsured, 1=private insurance only, 2=public insurance only, 3=private and public insurances), education status (*HSgrad*; 0=did not graduate high school, 1=graduated high school).
+
+```{r, echo = TRUE}
+
+m6 = glm.nb(ideal_health_indicators ~ age + PrivatePublicIns + HSgrad, data=data2)
+
+set.seed(100)
+cv_error <- cv.glm(data2, m5, K=25)
+cv_error$delta
+
+cv_error <- cv.glm(data2, m6, K=25)
+cv_error$delta
+
+```
+I calculated the CV(k=25) for m5 and m6 (m5=1.168876 1.168686, m6=1.177968 1.177830) at a set seed of 100. In this case m5 CV(k=25) < m6 CV(k=25). Thus, I concluded that m5 is better fit than m6. 
+
+#### 14. Summary
+
+In the first case I built two models in order to predict the impact of age, education, diabetic categories, body mass index, the interaction between age and the diabetic categories (how age and diabetic categories together impact systolic blood), and the interaction between diabetic categories and education (how education and diabetic categories together impact systolic blood pressure) on systolic blood pressure. Subsequently, I built a second model with the same characteristics, however I did not include the interactions. Next, I ran a test known as leave one out cross validation, to check what model worked better to predict the impact on systolic blood pressure. My results concluded that model one with the interactions was a better fit for the analysis.   
