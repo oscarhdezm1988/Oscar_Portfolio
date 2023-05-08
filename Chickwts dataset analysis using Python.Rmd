@@ -1,0 +1,198 @@
+---
+title: "Chickwts dataset analysis using Python"
+author: "Oscar Hernandez Mata"
+output: html_document
+---
+
+## Python Basics 
+
+I computed the mean of the square root of a vector of 100 random numbers. 
+
+```{python}
+import numpy 
+vector100 = numpy.random.rand(100)
+sqrt_vector100 = numpy.sqrt(vector100)
+mean_sqrt_vector100=numpy.mean(sqrt_vector100)
+print("Mean of the square root of the vector100:", mean_sqrt_vector100)
+```
+
+
+I made a vector from 1 to 100. I made a for-loop which runs through the whole vector. I multiplied the elements which are smaller than 11 or larger than 90 with 10 and the other elements with 0.1
+
+```{python}
+
+vector = numpy.arange(1, 101) 
+
+for k in range(len(vector)):
+    if vector[k] < 11 or vector[k] > 90:
+        vector[k] *= 10
+    else:
+        vector[k] *= 0.1
+
+print(vector)
+```
+
+
+I wrote a function for the previous ToDo, so  that I could feed it any vector (as argument). I used a for-loop in the function to do the computation with each element. 
+
+```{python}
+#Code here
+def multiply_vector(vector):
+    for k in range(len(vector)):
+        if vector[k] < 11 or vector[k] > 90:
+            vector[k] *= 10
+        else:
+            vector[k] *= 0.1
+    return vector
+
+vector = numpy.arange(1, 101)
+vect1 = multiply_vector(vector)
+print(vect1)
+```
+
+
+
+## Data Analysis
+
+
+```{python}
+from sklearn import linear_model
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_percentage_error
+```
+
+
+```{python}
+
+import pandas 
+import statsmodels.api as stat
+chickwts = stat.datasets.get_rdataset("chickwts", "datasets").data # load data "chickwts" from the R package 'datasets'
+
+
+training_data, testing_data = train_test_split(chickwts, test_size=0.2, random_state=25)
+
+training_data = pandas.get_dummies(training_data, columns=["feed"])
+
+
+Y = training_data["weight"] 
+X = training_data.drop(columns=["weight"]) 
+reg =  linear_model.LinearRegression().fit(X,Y)
+
+testing_data = pandas.get_dummies(testing_data, columns=["feed"])
+
+Y_test = testing_data["weight"] 
+X_test = testing_data.drop(columns=["weight"])
+weight_y_pred = reg.predict(X_test) 
+
+print(reg.coef_)
+
+mean_absolute_percentage_error(y_true=Y_test,y_pred=weight_y_pred)
+
+```
+
+
+
+I plotted a histogram of the weights of chicks. 
+
+```{python}
+#Code here
+import matplotlib.pyplot
+matplotlib.pyplot.figure();
+matplotlib.pyplot.hist(chickwts['weight'], bins=10)
+matplotlib.pyplot.show()
+```
+
+
+
+I splited the data to 25% training and 75% testing data sets 
+
+```{python}
+
+training_data, testing_data = train_test_split(chickwts, test_size=0.25, random_state=25)
+
+```
+
+I created an outcome (Y=weight) and features (X=feed) from traning data and testing data.
+
+```{python}
+
+training_data, testing_data = train_test_split(chickwts, test_size=0.2, random_state=25)
+
+Y = training_data["weight"] 
+X = training_data.drop(columns=["weight"]) 
+
+Y_test = testing_data["weight"] 
+X_test = testing_data.drop(columns=["weight"])
+
+```
+
+
+I fited a linear regression on training data set.
+
+```{python}
+
+training_data, testing_data = train_test_split(chickwts, test_size=0.2, random_state=25)
+
+training_data = pandas.get_dummies(training_data, columns=["feed"])
+
+
+Y = training_data["weight"] 
+X = training_data.drop(columns=["weight"]) 
+reg =  linear_model.LinearRegression().fit(X,Y)
+
+
+Y_test = testing_data["weight"] 
+X_test = testing_data.drop(columns=["weight"])
+
+print(reg.coef_)
+
+```
+
+
+I predicted using the fit and testing data set.
+```{python}
+#Code here
+training_data, testing_data = train_test_split(chickwts, test_size=0.2, random_state=25)
+
+training_data = pandas.get_dummies(training_data, columns=["feed"])
+
+
+Y = training_data["weight"] 
+X = training_data.drop(columns=["weight"]) 
+reg =  linear_model.LinearRegression().fit(X,Y)
+
+testing_data = pandas.get_dummies(testing_data, columns=["feed"])
+
+Y_test = testing_data["weight"] 
+X_test = testing_data.drop(columns=["weight"])
+weight_y_pred = reg.predict(X_test) 
+
+print(reg.coef_)
+print(weight_y_pred)
+```
+
+I calculated MAPE (mean absolute percentage error).
+
+```{python}
+
+training_data, testing_data = train_test_split(chickwts, test_size=0.2, random_state=25)
+
+training_data = pandas.get_dummies(training_data, columns=["feed"])
+
+
+Y = training_data["weight"] 
+X = training_data.drop(columns=["weight"]) 
+reg =  linear_model.LinearRegression().fit(X,Y)
+
+testing_data = pandas.get_dummies(testing_data, columns=["feed"])
+
+Y_test = testing_data["weight"] 
+X_test = testing_data.drop(columns=["weight"])
+weight_y_pred = reg.predict(X_test) 
+
+print(reg.coef_)
+
+mean_absolute_percentage_error(y_true=Y_test,y_pred=weight_y_pred)
+```
+
+

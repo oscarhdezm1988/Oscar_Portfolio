@@ -1,0 +1,150 @@
+---
+title: "Airlines and Flights datasets analysis"
+author: "Oscar Hernandez Mata"
+date: "2022"
+output: html_document
+---
+
+In this project I will be working with R, SQL, and Python in the same document. I will use the data sets *airlines* and *flights* from the package *nycflights13*.
+
+```{r, warning=FALSE, message=FALSE}
+
+#install.packages("nycflights13") 
+##install.packages("sqldf")       
+#install.packages("tidyverse")    
+#install.packages("dplyr")
+
+
+library(nycflights13)
+library(sqldf)
+library(tidyverse)
+library(dplyr)
+library(haven)
+library(ggplot2)
+library(data.table)
+
+data(nycflights13::airlines)
+data(nycflights13::airports)
+data(nycflights13::flights)
+data(nycflights13::planes)
+data(nycflights13::weather)
+
+data("airlines")
+data("airports")
+data("flights")
+data("planes")
+data("weather")
+```
+
+
+> **I listed the name of airlines where the destination is ATL airport with their *average arrival delays* and sort them from the smallest to largest average arrival delays.** 
+
+I solved this using R, SQL, and Python.
+
+### R solution
+
+```{r, warning=FALSE, message=FALSE}
+
+atlanta_flights <- filter(flights, dest == "ATL")
+joined_atlanta_airlines <- inner_join(atlanta_flights, airlines, by = "carrier")
+
+avg_delays <- joined_atlanta_airlines %>%
+  group_by(name) %>%
+  summarize(average_arrival_delay = mean(arr_delay, na.rm = TRUE)) %>%
+  arrange(average_arrival_delay)
+
+avg_delays
+
+```
+
+
+### SQL solution
+
+```{r, warning=FALSE, message=FALSE }
+sqldf("
+  SELECT airlines.name, AVG(arr_delay) AS average_arrival_delay
+  FROM flights
+  JOIN airlines ON flights.carrier = airlines.carrier
+  WHERE dest = 'ATL'
+  GROUP BY airlines.name
+  ORDER BY average_arrival_delay ASC
+")
+```
+
+
+### Python solution
+
+```{python}
+
+import pandas as pd
+import numpy as np
+import statsmodels.api as stat
+
+from nycflights13 import airlines, flights
+
+flights_atlanta = flights[flights['dest'] == 'ATL']
+
+data0 = flights_atlanta.join(airlines.set_index('carrier'), on='carrier')
+
+data_average_delay = data0.groupby('name')['arr_delay'].mean().reset_index()
+
+data_average_delay = data_average_delay.sort_values('arr_delay')
+
+data_average_delay
+
+```
+
+
+
+> **I ploted the boxplot of the departure delays vs the name of airlines where the destination is ATL airport. I solved this using R and Python.**
+
+
+### R solution
+Use ggplot
+```{r, warning=FALSE, message=FALSE}
+
+atl_flights <- filter(flights, dest == "ATL")
+
+ggplot(joined_atlanta_airlines, aes(x = name, y = dep_delay)) + 
+  geom_boxplot() +
+  ggtitle("Departure Delays by Airline to ATL Airport") +
+  xlab("Airline Name") + ylab("Departure Delay (minutes)")
+
+
+```
+
+
+### Python solution
+
+```{python}
+import pandas as pd
+import matplotlib.pyplot as plt
+
+from nycflights13 import flights, airlines
+
+atl_flights = flights[flights['dest'] == "ATL"]
+
+data0.boxplot(column='dep_delay', by='name')
+plt.title("Departure Delays by Airline to ATL")
+plt.xlabel("Airline")
+plt.ylabel("Departure Delay (minutes)")
+plt.show()
+
+```
+
+> **For each airlines: I found the month where the average departure delay time is the highest in the year. I Made a visualization to show the results. I solved this question using Python.**
+
+```{python}
+
+grouped = data0.groupby('month')['dep_delay'].mean()
+grouped
+
+fig, ax = plt.subplots(figsize=(10, 6))
+ax.bar(grouped.index, grouped.values)
+ax.set_xticks(range(1, 13))
+ax.set_xlabel('Month')
+ax.set_ylabel('Average departure delay (min)')
+ax.set_title('Average departure delay time by month across all airlines')
+plt.show()
+```
+The month withe highest average departure delay is July. 

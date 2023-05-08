@@ -1,0 +1,253 @@
+---
+title: "Jackson Heart Study diabetes analysis"
+author: "Oscar Hernandez Mata"
+format: html
+self-contained: true
+---
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(haven)
+library(haven)
+analysis1 <- read_sas("analysis1.sas7bdat", 
+    NULL)
+library(ggplot2)
+library(fastDummies)
+library(data.table)
+library(equatiomatic)
+library(lindia)
+library(car)
+library(sjPlot)
+library(nnet)
+library(lmtest)
+library(AER)
+library(mlogit)
+library(MASS)
+library(brant)
+```
+
+#### 1. I modeled diabetic status (*Diabetes*; 0=non-diabetic, 1=diabetic) as a function of age (*age*; years), weight (*weight*; kg), hypertension status (*HTN*; 0=normotensive, 1=hypertensive), and fasting HDL categorization (*hdl3cat*; 0=low, 1=normal, 2=high), and the interactions between (1) weight and hypertension and (2) weight and fasting HDL categorization. 
+
+```{r, echo = TRUE}
+data1=analysis1%>%dplyr::select(
+Diabetes,
+age,
+weight,
+HTN,
+hdl3cat
+)%>%
+  na.omit()
+
+data1 = dummy_cols(data1, select_columns = c("hdl3cat"))
+
+setnames(data1, new=c('low', 'normal', 'high'),
+          old=c('hdl3cat_0', 'hdl3cat_1', 'hdl3cat_2'))
+
+m1=glm(Diabetes~age+weight+HTN+low+high+weight:HTN+weight:low+weight:high, data=data1, family = "binomial")
+summary(m1)
+
+
+c1=coefficients(m1)
+c1
+
+round(exp(coefficients(m1)), 4)
+```
+
+```{r}
+extract_eq(m1, use_coefs = TRUE)
+```
+Interpretation of the odds ratio. 
+
+For every year increase in age, the odds of individuals becoming diabetics increase by 4.3%.
+For every kg increase in weight, the odds of individuals becoming diabetic increase by 3.5%.
+The odds of being diabetic for someone hypertensive are 735% higher than for someone who is normotensive. 
+Individuals with low fasting HDL cholesterol are estimated to have 82.24% higher odds of becoming diabetic compared to those with normal fasting HDL cholesterol. 
+Individuals with high fasting HDL cholesterol are estimated to have 165.1% higher odds of being diabetic compared to those with normal fasting HDL cholesterol.
+Compared to normotensive for each kg increase in weight for hypertensive individuals, the odds of becoming diabetic decrease by 1.2%. 
+Compared to individuals with normal fasting HDL cholesterol, for each kg increase in weight for individuals with low fasting HDL cholesterol, the odds of becoming diabetic are estimated to decrease by .21%.
+Compared to individuals with normal fasting HDL cholesterol, for each kg increase in weight for individuals with high fasting HDL cholesterol, the odds of becoming diabetic are estimated to decrease by 1.18%. 
+
+#### 2. I performed the appropriate hypothesis test to determine if the interaction between weight and hypertension status is significant. Test at the $\alpha=0.05$ level.
+
+```{r, echo = TRUE}
+full_int1=glm(Diabetes~age+weight+HTN+low+high+weight:HTN, data=data1, family = "binomial")
+reduced_int1=glm(Diabetes~age+weight+HTN+low+high, data=data1, family = "binomial")
+anova(reduced_int1, full_int1, test = "Chisq")
+```
+I calculated p-value=0.036, which is less than alpha=0.05. Thus, I conclude that the interaction between weight and hypertension status is significant. 
+
+#### 3. I performed the appropriate hypothesis test to determine if the interaction between weight and fasting HDL categorization is significant. Test at the $\alpha=0.05$ level.
+
+```{r, echo = TRUE}
+full_int2=glm(Diabetes~age+weight+HTN+low+high+weight:low+weight:high, data=data1, family = "binomial")
+reduced_int2=glm(Diabetes~age+weight+HTN+low+high, data=data1, family = "binomial")
+anova(reduced_int2, full_int2, test = "Chisq")
+```
+I calculated p-value=0.21, which is greater than alpha=0.05. Thus, I conclude that the interaction between weight and fasting HDL categorization is not significant. 
+
+
+#### 4. I constructed an data visualization for cases where someone weighted 70kg, 90kg, and 110kg. 
+
+```{r, echo = TRUE}
+c1
+data1=data1%>%mutate(
+    pred_diab70kg=exp(c1[1]+c1[2]*age+c1[3]*70)/(1+exp(c1[1]+c1[2]*age+c1[3]*70)),
+    pred_diab90kg=exp(c1[1]+c1[2]*age+c1[3]*90)/(1+exp(c1[1]+c1[2]*age+c1[3]*90)),
+    pred_diab110kg=exp(c1[1]+c1[2]*age+c1[3]*110)/(1+exp(c1[1]+c1[2]*age+c1[3]*110))  
+    )
+data1 %>% ggplot(aes(x = age, y = Diabetes)) +
+geom_point() +
+geom_line(aes(y = pred_diab70kg), color="red")+
+geom_line(aes(y = pred_diab90kg), color="blue")+
+geom_line(aes(y = pred_diab110kg), color="green")+
+geom_text(aes(x = 83, y = 0.34, label = "110kg"), color="green", show.legend = FALSE) +
+geom_text(aes(x = 83, y = 0.21, label = "90kg"), color="blue", show.legend = FALSE)+
+geom_text(aes(x = 83, y = 0.13, label = "70kg"), color="red", show.legend = FALSE)
+
+```
+Th graph shows that as age increases the odds of becoming diabetic increase. But people that weight 110kg have more odds of becoming diabetic than those who weight 90kg or 70kg.
+
+#### 5. I used ordinal logistic regression to model diabetic status (*diab3cat*; 0=non-diabetic, 1=pre-diabetic, 2=diabetic) as a function of age (*age*; years), weight (*weight*; kg), hypertension status (*HTN*; 0=normotensive, 1=hypertensive), and fasting HDL categorization (*hdl3cat*; 0=low, 1=normal, 2=high). 
+
+```{r, echo = TRUE}
+data3=analysis1%>%dplyr::select(
+  diab3cat,
+  age,
+  weight,
+  HTN,
+  hdl3cat
+)%>%
+  na.omit()
+
+data3 = dummy_cols(data3, select_columns = c("HTN", "hdl3cat"))
+
+data3 = data3%>% mutate(diab3cat = factor(diab3cat, labels = c("non_diabetic", "pre_diabetic", "diabetic")))
+
+setnames(data3, new=c('normotensive', 'hypertensive'),
+          old=c('HTN_0', 'HTN_1'))
+
+setnames(data3, new=c('low', 'normal', 'high'),
+          old=c('hdl3cat_0', 'hdl3cat_1', 'hdl3cat_2'))
+
+m3 = polr(diab3cat ~ age+ weight + hypertensive + low+high,
+data = data3, Hess = TRUE)
+summary(m3)
+
+c3=coefficients(m3)
+c3
+
+round(exp(coefficients(m3)), 2)
+```
+```{r}
+extract_eq(m3, use_coefs = TRUE)
+```
+
+
+#### 6. I checked for  significant predictors of diabetic status?
+
+```{r, echo = TRUE}
+coeftest(m3)
+```
+I calculated p-value for all the predictors. They all are less than alpha=0.05. Therefore, they all are significant predictors of diabetic status. 
+
+#### 7. I found the odds ratios and corresponding 95% CIs for the predictors.
+
+```{r, echo = TRUE}
+round(exp(confint(m3)),4)
+```
+
+#### 8. Interpretations of the odds ratios found above.
+
+For a one-year increase in age, the odds of individuals moving from a non-diabetic status to pre-diabetic status, or from a pre-diabetic status to a diabetic status increase by 5%. 
+For every kg increase in weight, the odds of individuals moving from non-diabetic status to pre-diabetic status, or from pre-diabetic status to diabetic status increases by 2%. 
+For any fixed diabetic status, the estimated odds that a hypertensive is in the diabetic direction rather than the non-diabetic direction is 1.88 times the estimated odds for normotensive individuals. 
+For any fixed diabetic status, the estimated odds that individuals with low HDL cholesterol are in the diabetic direction rather than the non-diabetic direction is 1.34 times the estimated odds for individuals with normal HDL cholesterol.
+For any fixed diabetic status, the estimated odds that individuals with high HDL cholesterol are in the diabetic direction rather than the non-diabetic direction is 0.75 times the estimated odds for individuals with normal HDL cholesterol.
+
+#### 9. I used nominal/multinomial logistic regression to  model diabetic status (*diab3cat*; 0=non-diabetic, 1=pre-diabetic, 2=diabetic) as a function of age (*age*; years), weight (*weight*; kg), hypertension status (*HTN*; 0=normotensive, 1=hypertensive), and fasting HDL categorization (*hdl3cat*; 0=low, 1=normal, 2=high).
+```{r, echo = TRUE}
+data2=analysis1%>%dplyr::select(
+  diab3cat,
+  age,
+  weight,
+  HTN,
+  hdl3cat
+)%>%
+  na.omit()
+
+data2 <- data2%>% mutate(diab3cat = factor(diab3cat, labels = c("non_diabetic", "pre_diabetic", "diabetic")))
+
+data2 = dummy_cols(data2, select_columns = c("hdl3cat"))
+
+setnames(data2, new=c('low', 'normal', 'high'),
+          old=c('hdl3cat_0', 'hdl3cat_1', 'hdl3cat_2'))
+
+m2=multinom(diab3cat ~ age+weight+HTN+low+high, data = data2)
+summary(m2)
+
+c2=coefficients(m2)
+c2
+
+round(exp(coefficients(m2)), 2)
+
+```
+$$
+\log\left[ \frac { \widehat{P( \operatorname{Diabetes}_{pre diabetic} = \operatorname{1} )} }{ 1 - \widehat{P( \operatorname{Diabetes}_{pre diabetic} = \operatorname{1} )} } \right] = -5.27 + 0.05(\operatorname{age}) + 0.023(\operatorname{weight}) + 0.312(\operatorname{HTN}) + 0.18(\operatorname{low}) - 0.34(\operatorname{high}) 
+$$
+$$
+\log\left[ \frac { \widehat{P( \operatorname{Diabetes}_{diabetic} = \operatorname{1} )} }{ 1 - \widehat{P( \operatorname{Diabetes}_{diabetic} = \operatorname{1} )} } \right] = -8.84 + 0.07(\operatorname{age}) + 0.035(\operatorname{weight}) + 1.17(\operatorname{HTN}) + 0.49(\operatorname{low}) - 0.28(\operatorname{high}) 
+$$
+
+#### 10. I checked for predictors that are significant predictors of diabetic status?
+
+```{r, echo = TRUE}
+full <- multinom(diab3cat ~ age+weight+HTN+low+high, data = data2)
+reduced <- multinom(diab3cat ~ 1, data = data2)
+anova(reduced, full)
+```
+According to our test all of the predictors are significant, because the p-value is very close to 0. 
+
+```{r}
+coeftest(m2)
+```
+The Wald Z test reveals that for pre diabetic, all the predictors are significant except for low HDL. On the other hand, for diabetics, all the predictors are significant except for high HDL.  
+
+#### 11. I found the odds ratios and corresponding 95% CIs for the predictors.
+
+```{r, echo = TRUE}
+round(exp(confint(m2)),2)
+```
+
+#### 12. Brief interpretations of the odds ratios.
+
+For every year increase in age, the odds of an individual becoming pre diabetic over diabetic increases by 5 percent. 
+For every kg weight increase, the odds of an individual becoming pre diabetic over diabetic increases by 2 percent. 
+Compared to a normotensive, the odds of a hypertensive becoming pre diabetic over diabetic increases by 37%.
+Compared to individuals with normal HDL cholesterol, the odds of individuals with low HDL cholesterol becoming pre diabetic over diabetic increases by 19 percent.
+Compared to individuals with normal HDL cholesterol, the odds of individuals with high HDL cholesterol becoming pre diabetic over diabetic decreases by 29 percent.
+
+For every year increase in age, the odds of an individual becoming diabetic over pre diabetic increases by 7 percent.
+For every kg weight increase, the odds of an individual becoming diabetic over pre diabetic increases by 4 percent. 
+Compared to a normotensive, the odds of a hypertensive of becoming diabetic over pre diabetic increases by 206%.
+Compared to individuals with normal HDL cholesterol, the odds of individuals with low HDL cholesterol becoming diabetic over pre diabetic increases by 64 percent.
+Compared to individuals with normal HDL cholesterol, the odds of individuals with high HDL cholesterol becoming pre diabetic over diabetic decreases by 25 percent.
+
+
+
+#### 13. Technical summary.
+
+We used data from the Jackson Heart Study (JHS) in the three models. As a first step, we created a binary logistic regression model to analyze the odds of individuals becoming diabetic. Then we calculated the odds ratio, which revealed that for every year increase in age, the odds of individuals becoming diabetics increase by 4.3%. Additionally, for every kg increase in weight, the odds of individuals becoming diabetic increase by 3.5%. On the other hand, the odds of being diabetic for someone hypertensive are 735% higher than for someone who is normotensive. Also, individuals with low fasting HDL cholesterol are estimated to have 82.24% higher odds of becoming diabetic than those with normal fasting HDL cholesterol. However, individuals with high fasting HDL cholesterol are estimated to have 165.1% higher odds of being diabetic compared to those with normal fasting HDL cholesterol. Furthermore, compared to normotensive for each kg increase in weight for hypertensive individuals, the odds of becoming diabetic decrease by 1.2%. In addition, compared to individuals with normal fasting HDL cholesterol, for each kg increase in weight for individuals with low fasting HDL cholesterol, the odds of becoming diabetic are estimated to decrease by .21%. Finally, compared to individuals with normal fasting HDL cholesterol, for each kg increase in weight for individuals with high fasting HDL cholesterol, the odds of becoming diabetic are estimated to decrease by 1.18%.
+As the second step, we tested whether the interactions in our model were significant. For the interaction between HTN and weight, we calculated a p-value less than alpha=0.05, whereas, for the interaction between hdl3cat and weight, the p-value resulted greater than alpha=0.05. Subsequently, we created predictors where age varied while we held weight constant at 70kg, 90kg, and 110kg. Besides, our predictors were created for normotensive individuals with normal HDL cholesterol. The outcome disclosed that for normotensive individuals with normal fasting HDL cholesterol levels and a weight of 70kg, the odds of becoming diabetic increase by 4% for every year of age increase. Similarly, for normotensive individuals with normal fasting HDL cholesterol levels and a weight of 90kg, the odds of becoming diabetic increase by 4% for every year of age increase. Lastly, for normotensive individuals, with normal fasting HDL cholesterol levels and a weight of 110kg, the odds of becoming diabetic increase by 4% for every year of age increase. 
+In our second model, we conducted an ordinal logistic regression. We established three categories for diabetic status: non-diabetic, pre diabetic, and diabetic. As in our first model, we calculated the odds ratio, which showed that for a one-year increase in age, the odds of individuals moving from a non-diabetic status to pre-diabetic status or from a pre-diabetic status to a diabetic status increase by 5%. On the other hand, for every kg increase in weight the odds of individuals moving from a non-diabetic status to pre-diabetic status, or from pre-diabetic status to diabetic status increases by 2%. Additionally, for any fixed diabetic status, the estimated odds that a hypertensive is in the diabetic direction rather than the non-diabetic direction is 1.88 times the estimated odds for normotensive individuals. Besides, for any fixed diabetic status, the estimated odds that individuals with low HDL cholesterol are in the diabetic direction rather than the non-diabetic direction is 1.34 times the estimated odds for individuals with normal HDL cholesterol. Finally, for any fixed diabetic status, the estimated odds that individuals with high HDL cholesterol are in the diabetic direction rather than the non-diabetic direction is 0.75 times the estimated odds for individuals with normal HDL cholesterol.
+Similarly to our first model, we tested for the significance of our predictors. The Wald Z test revealed that for pre diabetic, all the predictors were significant except for low HDL. Yet, for diabetics, all the predictors were significant except for high HDL. 
+In our third and final model, we performed a multinomial logistic regression with the same three categories for diabetic status as in the second model. We also calculated the odds ratio for our coefficients. We conclude that for pre diabetic, for every year increase in age, the odds of an individual becoming pre diabetic over diabetic increases by 5 percent. However, for every kg weight increase, the odds of an individual becoming pre diabetic over diabetic increases by 2 percent. In addition, compared to a normotensive, the odds of a hypertensive becoming pre diabetic over diabetic increases by 37%. On the other hand, compared to individuals with normal HDL cholesterol, the odds of individuals with low HDL cholesterol becoming pre diabetic over diabetic increases by 19 percent.Lastly, compared to individuals with normal HDL cholesterol, the odds of individuals with high HDL cholesterol becoming pre diabetic over diabetic decreases by 29 percent.
+Furthermore, for diabetic, we concluded that, first, for every year increase in age, the odds of an individual becoming diabetic over pre diabetic increases by 7 percent. Second, for every kg weight increase, the odds of an individual becoming diabetic over pre diabetic increases by 4 percent. Third, compared to a normotensive, the odds of a hypertensive of becoming diabetic over pre diabetic increases by 206%. Forth, compared to individuals with normal HDL cholesterol, the odds of individuals with low HDL cholesterol becoming diabetic over pre diabetic increases by 64 percent. Fith, compared to individuals with normal HDL cholesterol, the odds of individuals with high HDL cholesterol becoming pre diabetic over diabetic decreases by 25 percent.
+
+#### 14. Non-Technical summary .
+
+We used data from the Jackson Heart Study (JHS) in the three models. This time we expanded our research by including logistic regression to analyze the odds of individuals becoming diabetic. In the first model, we conducted a binary logistic regression with two possible outcomes: non-diabetic and diabetic. The results revealed that every year increase in age, the odds of individuals becoming diabetics increase by 4.3%. Additionally, for every kg increase in weight, the odds of individuals becoming diabetic increase by 3.5%. On the other hand, the odds of being diabetic for someone hypertensive are 735% higher than for someone who is normotensive. Also, individuals with low fasting HDL cholesterol are estimated to have 82.24% higher odds of becoming diabetic compared to those with normal fasting HDL cholesterol, and individuals with high fasting HDL cholesterol are estimated to have 165.1% higher odds of being diabetic compared to those with normal fasting HDL cholesterol. Furthermore, compared to normotensive for each kg increase in weight for hypertensive individuals, the odds of becoming diabetic decrease by 1.2%. In addition, compared to individuals with normal fasting HDL cholesterol, for each kg increase in weight for individuals with low fasting HDL cholesterol, the odds of becoming diabetic are estimated to decrease by .21%. Finally, compared to individuals with normal fasting HDL cholesterol, for each kg increase in weight for individuals with high fasting HDL cholesterol, the odds of becoming diabetic are estimated to decrease by 1.18%. 
+Subsequently, we tested for individuals whose ages varied and weighed 70kg, 90kg, and 110kg. They were also normotensive with normal HDL cholesterol. The results disclosed that for normotensive individuals with normal fasting HDL cholesterol levels and a weight of 70kg, the odds of becoming diabetic increase by 4% for every year of age increase. Similarly, for normotensive individuals, with normal fasting HDL cholesterol levels and a weight of 90kg, the odds of becoming diabetic increase by 4% for every year of age increase. Lastly, for normotensive individuals with normal fasting HDL cholesterol levels and a weight of 110kg, the odds of becoming diabetic increase by 4% for every year of age increase. 
+In our second model, we conducted an ordinal logistic regression. We established three categories for diabetic status: non-diabetic, pre diabetic, and diabetic. The results disclosed that for a one-year increase in age, the odds of individuals moving from a non-diabetic status to pre-diabetic status, or from a pre-diabetic status to diabetic status increases by 5%. On the other hand, for every kg increase in weight, the odds of individuals moving from non-diabetic status to pre-diabetic status, or from pre-diabetic status to diabetic status increases by 2%. Additionally, for any fixed diabetic status, the estimated odds that a hypertensive is in the diabetic direction rather than the non-diabetic direction is 1.88 times the estimated odds for normotensive individuals. Besides, for any fixed diabetic status, the estimated odds that individuals with low HDL cholesterol are in the diabetic direction rather than the non-diabetic direction is 1.34 times the estimated odds for individuals with normal HDL cholesterol. Finally, for any fixed diabetic status, the estimated odds that individuals with high HDL cholesterol are in the diabetic direction rather than the non-diabetic direction is 0.75 times the estimated odds for individuals with normal HDL cholesterol.
+In our third and final model, we performed a multinomial logistic regression with the same three categories for diabetic status as in the second model. We conclude that for pre diabetic, for every year increase in age, the odds of an individual becoming pre diabetic over diabetic increases by 5 percent. However, for every kg weight increase, the odds of an individual becoming pre diabetic over diabetic increases by 2 percent. In addition, compared to a normotensive, the odds of a hypertensive becoming pre diabetic over diabetic increases by 37%. On the other hand, compared to individuals with normal HDL cholesterol, the odds of individuals with low HDL cholesterol becoming pre diabetic over diabetic increases by 19 percent.Lastly, compared to individuals with normal HDL cholesterol, the odds of individuals with high HDL cholesterol becoming pre diabetic over diabetic decreases by 29 percent.
+Furthermore, for diabetic we concluded that, first, for every year increase in age, the odds of an individual becoming diabetic over pre diabetic increases by 7 percent. Second, for every kg weight increase, the odds of an individual becoming diabetic over pre diabetic increases by 4 percent. Third, compared to a normotensive, the odds of a hypertensive of becoming diabetic over pre diabetic increases by 206%. Forth, compared to individuals with normal HDL cholesterol, the odds of individuals with low HDL cholesterol becoming diabetic over pre diabetic increases by 64 percent. Fith, compared to individuals with normal HDL cholesterol, the odds of individuals with high HDL cholesterol becoming pre diabetic over diabetic decreases by 25 percent.

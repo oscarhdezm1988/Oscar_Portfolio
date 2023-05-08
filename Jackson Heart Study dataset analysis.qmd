@@ -1,0 +1,191 @@
+---
+title: "Jackson Heart Study dataset analysis"
+author: "Oscar Hernandez Mata"
+format: html
+self-contained: true
+---
+
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(haven)
+library(haven)
+analysis1 <- read_sas("analysis1.sas7bdat", 
+    NULL)
+library(ggplot2)
+library(fastDummies)
+library(data.table)
+library(equatiomatic)
+library(lindia)
+library(car)
+library(sjPlot)
+library(nnet)
+library(lmtest)
+library(AER)
+library(mlogit)
+library(MASS)
+library(brant)
+library(pscl)
+```
+
+
+#### 1. I created a variable that counts the number of controllable risk factors for stroke: blood pressure (*idealHealthBP*; 1=ideal health, 0=not ideal health), smoking status (*idealHealthSMK*; 1=ideal health, 0=not ideal health), diabetes (*idealHealthDM*; 1=ideal health, 0=not ideal health), diet  (*idealHealthNutrition*; 1=ideal health, 0=not ideal health), physical activity (*idealHealthPA*; 1=ideal health, 0=not ideal health), obesity  (*idealHealthBMI*; 1=ideal health, 0=not ideal health), and high cholesterol  (*idealHealthChol*; 1=ideal health, 0=not ideal health). Note: all of the idealHealth variables indicate *ideal* health… I counted the number of *not ideal* health indicators.
+
+#### 2. I used Poisson regression to model the count variable I created as a function of age (*age*; years), health insurance (*PrivatePublicIns*; 0=uninsured, 1=private insurance only, 2=public insurance only, 3=private and public insurances), and education status (*HSgrad*; 0=did not graduate high school, 1=graduated high school).
+
+```{r, echo = TRUE}
+data1=analysis1%>%dplyr::select(
+  age,
+  PrivatePublicIns,
+  HSgrad,
+  idealHealthBP,
+  idealHealthSMK,
+  idealHealthDM,
+  idealHealthNutrition,
+  idealHealthPA,
+  idealHealthBMI,
+  idealHealthChol
+  )%>%
+  na.omit()
+
+
+data1 = data1 %>% 
+  mutate(risk_factors_for_stroke = rowSums(dplyr::select(., idealHealthBP:idealHealthChol) == 0, na.rm = TRUE))
+
+count(data1, risk_factors_for_stroke)
+
+data1$PrivatePublicIns = factor(data1$PrivatePublicIns, levels = c(0, 1, 2, 3), labels = c("Uninsured", "Private", "Public", "Private_Public"))
+
+m1 = glm(risk_factors_for_stroke ~ age + PrivatePublicIns + HSgrad, family=poisson, data=data1)
+summary(m1)
+
+c1=coefficients(m1)
+```
+```{r}
+extract_eq(m1, use_coefs = TRUE)
+```
+
+
+#### 3. I performed the appropriate hypothesis tests to determine which, if any, were significant predictors of the number of controllable risk factors for stroke.
+
+```{r, echo = TRUE}
+fullage=glm(risk_factors_for_stroke ~ age + PrivatePublicIns + HSgrad, family=poisson, data=data1)
+reducedage=glm(risk_factors_for_stroke ~  PrivatePublicIns + HSgrad, family=poisson, data=data1)
+anova(reducedage, fullage, test = "Chisq")
+
+fullIns=glm(risk_factors_for_stroke ~ age + PrivatePublicIns + HSgrad, family=poisson, data=data1)
+reducedIns=glm(risk_factors_for_stroke ~ age+ HSgrad, family=poisson, data=data1)
+anova(reducedIns, fullIns, test = "Chisq")
+
+fullHs=glm(risk_factors_for_stroke ~ age + PrivatePublicIns + HSgrad, family=poisson, data=data1)
+reducedHs=glm(risk_factors_for_stroke ~ age+PrivatePublicIns, family=poisson, data=data1)
+anova(reducedHs, fullHs, test = "Chisq")
+```
+The test reveals that age is the only significant predictor of the number of controllable risk factors for stroke. We calculated p-value<0.01, which is less than alpha=0.05.
+
+#### 4. Next, I found the incident rate ratios and corresponding 95% CIs for the predictors.
+
+```{r, echo = TRUE}
+round(exp(coefficients(m1)), 4)
+exp(confint(m1))
+```
+
+#### 5. Interpretations of the incident rate ratios found.
+For every year increase in age, the expected count of controllable risk factors for stroke increases by approximately 1%. 
+
+People who are privately insured are expected to have 6% less controllable risk factors for stroke compared to people who are uninsured. However, the relationship between health insurance and controllable risk factors for stroke is not statistically significant. 
+
+People who are publicly insured are expected to have 3% less controllable risk factors for stroke compared to people who are uninsured. However, the relationship between health insurance and controllable risk factors for stroke is not statistically significant. 
+
+People who are privately and publicly insured are expected to have 8% less controllable risk factors for stroke compared to people who are uninsured. However, the relationship between health insurance and controllable risk factors for stroke is not statistically significant. 
+
+People who graduate from high school are expected to have 2% less controllable risk factors for stroke compared to people who are not graduated from high school. However, the relationship between high school graduation and controllable risk factors for stroke is not statistically significant. 
+
+
+#### 6.  Data visualization that explains the model results.
+```{r, echo = TRUE}
+
+c1
+
+data1 = data1 %>%
+mutate(
+predPriv = exp(c1[1]+c1[2]*age + c1[3]*1 + c1[6]),
+predPub = exp(c1[1]+c1[2]*age + c1[4]*1 + c1[6]),
+predPriv_Pub = exp(c1[1]+c1[2]*age + c1[5]*1 + c1[6]),
+predUni = exp(c1[1]+c1[2]*age + c1[6])
+)
+
+ggplot(data1, aes(x = age, y = risk_factors_for_stroke, color="age")) +
+scale_y_continuous(breaks=seq(0,7,1)) +
+xlim(15, 85) +
+geom_point() +
+geom_line(aes(y = predPriv), color = "red") +
+geom_line(aes(y = predPub), color = "blue") +
+geom_line(aes(y = predPriv_Pub), color = "green") +
+geom_line(aes(y = predUni), color = "black") +  
+geom_text(aes(x = 22, y = 3.9, label = "Uninsured"), color="black", show.legend = FALSE) +
+geom_text(aes(x = 22, y = 3.7, label = "Public"), color="blue", show.legend = FALSE) +
+geom_text(aes(x = 22, y = 3.5, label = "Private"), color="red", show.legend = FALSE)+
+geom_text(aes(x = 22, y = 3.3, label = "Private_Public"), color="green", show.legend = FALSE)+
+theme_bw()
+
+
+```
+The graphic confirms the conclusions above. As age increases, the controllable risk factors for stroke increase. On the other hand, people who are privately and publicly insured simultaneously have less controllable risk factors for stroke than another type of insurance and uninsured individuals.  
+
+#### 7. I used a negative binomial regression to model the count variable created above as a function of age (*age*; years), health insurance (*PrivatePublicIns*; 0=uninsured, 1=private insurance only, 2=public insurance only, 3=private and public insurances), and education status (*HSgrad*; 0=did not graduate high school, 1=graduated high school).
+
+```{r, echo = TRUE}
+m2 <- glm.nb(risk_factors_for_stroke ~ age + PrivatePublicIns + HSgrad, data = data1)
+summary(m2)
+```
+
+```{r}
+extract_eq(m2, use_coefs = TRUE)
+```
+
+#### 8. I compared and contrasted my two models. 
+
+$$
+\log ({ \widehat{E( \operatorname{risk_factors_for_stroke} )} })  = 1.17 + 0.01(\operatorname{age}) - 0.06(\operatorname{PrivatePublicIns}_{\operatorname{Private}}) - 0.03(\operatorname{PrivatePublicIns}_{\operatorname{Public}}) - 0.08(\operatorname{PrivatePublicIns}_{\operatorname{Private\_Public}}) - 0.02(\operatorname{HSgrad})
+$$
+$$
+\log ({ \widehat{E( \operatorname{risk_factors_for_stroke} )} })  = 1.17 + 0.01(\operatorname{age}) - 0.06(\operatorname{PrivatePublicIns}_{\operatorname{Private}}) - 0.03(\operatorname{PrivatePublicIns}_{\operatorname{Public}}) - 0.08(\operatorname{PrivatePublicIns}_{\operatorname{Private\_Public}}) - 0.02(\operatorname{HSgrad})
+$$
+The poisson regression model and the negative binomial regression model have similar coefficients. 
+
+#### 9. I checked the assumption for Poisson regression. 
+```{r}
+
+mean(data1$risk_factors_for_stroke)
+var(data1$risk_factors_for_stroke)
+
+ggplot(data1, aes(x=risk_factors_for_stroke)) +
+geom_bar(width = 1, color = "black") +
+scale_x_continuous(breaks=seq(0,7,1)) +
+xlab("count of risk of factors for a stroke") +
+theme_bw()
+```
+The assumptions for the Poisson regression are not met. The mean and the variance are not equal. There is a difference of 3.2573 between them. And the histogram shows a slight skewness to the left. 
+
+The mean and the variance are not equal, which means that data is overdispersed. The graph also reveals that there is some skewness to the left. One person only has one controllable risk factor for stroke, which provokes skewness. However, most people have between 4 and 6 controllable risk factors for stroke, which is why our data is not greatly overdispersed. The histogram of our data also looks close to a normal distribution, thus indicating the lack of a significant overdispersion.   
+
+
+####10.Explanation of why the data does not require a zero-inflated model.
+
+As we noticed in our graph above, the minimum count for controllable risk factors for stroke is one. All the patients in our data either smoke, have diabetic issues, or have blood pressure problems. Therefore, the average of controllable risk factors for stroke in our data is approximately 5.       
+
+#### 11. Tecnical summary of the results .
+
+This week we worked with data from Jackson Heart Study (JHS). First, we created a Poisson regression model to analyze the risk factors for stroke by considering the patients' age, the type of health insurance they own, and whether they were high school graduates. Second, we conducted a coefficient test to determine which predictors were significant of the number of controllable risk factors for stroke. We determined that only age was significant with a p-value<0.001. Third, we found the incident rate ratios (IRR) and the 95% CIs for the predictors. The IRR results revealed that for every year increase in age, the expected count of controllable risk factors for stroke increases by approximately 1%. For the type of insurance predictors, we concluded that privately insured people are expected to have 6% less controllable risk factors for stroke compared to uninsured people. On the other hand, publicly insured people are expected to have 3% less controllable risk factors for stroke compared to uninsured people. Additionally, privately and publicly insured people are expected to have 8% less controllable risk factors for stroke compared to uninsured people. Finally, for the graduation status predictor, we discovered that individuals who graduate from high school are expected to have 2% less controllable risk factors for stroke compared to people who are not graduated from high school. Next, we constructed a data visualization to explain the model result. The graphic confirmed that as age increases, the controllable risk factors for stroke increase, and privately and publicly insured people have a lower percentage of controllable risk factors for stroke than any other type of health insurance or uninsured individuals. 
+Furthermore, we created a negative binomial regression to analyze the overdispersion of the data. We used the same dependent variables and predictors as our Poisson regression model. Then we checked the assumptions for our Poisson regression model by comparing our dependent variable's mean and variance. Afterward, we created a histogram to analyze its distribution. Since the coefficients from our two models were similar, the mean and the variance had close values. The histogram showed that data was almost normally distributed, so we concluded that our data was not overdispersed. Lastly, we considered a zero-inflated model for testing for excess zeros in our data. However, the histogram and our data revealed no single individual without at least one controllable risk factor for stroke. Thus, there are no zeros. 
+
+#### 12. Summary of the results. 
+
+This week we worked with data from Jackson Heart Study (JHS) to analyze whether a patient's age, type of insurance, and education status had any impact on the risk factors for stroke. First, for the risk of factors for stroke, we considered whether the patient's blood pressure was ideal or not ideal. We also categorized the patient's diet as ideal or not ideal. Besides, we evaluated the patient's physical activity, obesity, cholesterol, and smoking status and classified them as ideal and not ideal as well. Subsequently, we counted every patient's risk factors for stroke and established a scale of 0 to 7 for all of our patients. Next, we created a model and conducted several tests, which revealed that age measured in years significantly impacts controllable risk factors for stroke. On the other hand, the type of health insurance does not have a statistically significant relationship with controllable risk factors for stroke neither does the patient's education status. Additionally, the model results showed that as individuals age, the controllable risk factors for stroke increase by approximately 1%. Yet, privately insured people have 6% less controllable risk factors for stroke than uninsured individuals. Another interesting result is that publicly insured people have 3% less risk factors for stroke than uninsured individuals, and privately and publicly insured patients have 8% less risk factors for stroke than uninsured patients. This last result we confirmed through a data visualization graphic. Finally, patients who graduated from high school have 2% less risk factors for stroke than patients who did not graduate. However, it is necessary to restate that health insurance and education status do not significantly impact risk factors for stroke. 
+Furthermore, we created a second model to test overdispersion in our data. Put simply, we tested that our observations were not far from the average or mean value because this can lead to incorrect conclusions or inaccurate predictions. So, it is essential to identify and account for overdispersion in our analysis to ensure our results are reliable. Luckly, our data was not overdispersed. Finally, we constructed a last model to test for excess zeros, which is also a relevant test to achieve a more accurate result. The excesses of zeros in our data can compromise our results and predictions. For instance, we want to analyze how many people walk through a given interception. However, we had a storm one week that prevented people from going out. That particular event would represent many zeros, thus affecting our data. Hence, statisticians and data scientists use the zero-inflation model to account for these zeros. Our model did not reveal any zeros, since there is not a single patient in our data without at least one controllable risk factors for stroke.      
+
+
+
+
