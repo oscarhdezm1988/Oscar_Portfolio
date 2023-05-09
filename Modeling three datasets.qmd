@@ -1,0 +1,816 @@
+---
+title: "Modeling three datasets"
+author: "Oscar Hernandez Mata"
+execute:
+  echo: true
+format: html
+self-contained: true
+editor: 
+  markdown: 
+    wrap: sentence
+---
+
+
+
+**Video game data here: <https://think.cs.vt.edu/corgis/csv/video_games/>.**
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(haven)
+library(haven)
+library(ggplot2)
+library(fastDummies)
+library(data.table)
+library(equatiomatic)
+library(lindia)
+library(car)
+library(sjPlot)
+library(nnet)
+library(lmtest)
+library(AER)
+library(mlogit)
+library(MASS)
+library(brant)
+library(boot)
+library(tictoc)
+library(caret)
+library(ordinal)
+video_games <- read_csv("video_games.csv")
+```
+Note: The count function is giving error. I removed the dplyr package and re installed it and it's still not working unless I use data$ plus the variable. However, if I use this code it will not render in the end.  
+
+**I constructed a variable, called *Solo*, that dichotomizes *Features.Max.Players* into games that are solo play (*Features.Max.Players* = 1) or multiplayer (*Features.Max.Players* \> 1).**
+
+```{r}
+data1=video_games%>%dplyr::select(
+  `Features.Max Players`,
+  Release.Console,
+  `Length.Main Story.Median`,
+  Metrics.Sales,
+  Release.Rating
+)%>%
+  na.omit()
+
+#count(data1$`Features.Max Players`)
+
+data1$Solo = ifelse(data1$`Features.Max Players` == 1, 1, 0)
+#count(data1$Solo)
+```
+
+**I constructed a variable, called *Type*, that dichotomizes *Release.Console* into consoles (Nintendo Wii, Xbox 360, and PlayStation 3) vs. handhelds (Nintendo DS and Sony PSP).**
+
+```{r}
+#count(data1$Release.Console)
+class(data1$Release.Console)
+
+data1$Type=ifelse(data1$Release.Console %in% c("Nintendo Wii", "X360", "PlayStation 3"), 1, 0)
+#count(data1$Type)
+```
+
+**I modeled total sales (*Metrics.Sales*; millions of dollars) as a function of console type (*Type*, as defined above), rating (*Release.Rating*), if the game is multiplayer or solo (*Solo*, as defined above), and the median length of the main storyline (*Length.Main.Story.Median*).**
+
+```{r}
+#count(data1$Metrics.Sales)
+hist(data1$Metrics.Sales)
+
+class(data1$Release.Rating)
+#count(data1$Release.Rating)
+
+#count(data1$`Length.Main Story.Median`)
+class(data1$`Length.Main Story.Median`)
+
+data1 <- data1 %>% filter(data1$`Length.Main Story.Median`>0.0000000)
+
+data1$Release.Rating=as.factor(data1$Release.Rating)
+
+m1=lm(data1$Metrics.Sales~Type+Release.Rating+Solo+`Length.Main Story.Median`, data=data1)
+
+almost_sas <- function(aov.results){
+  aov_residuals <- residuals(aov.results)
+  par(mfrow=c(2,2))
+  plot(aov.results, which=1)
+  hist(aov_residuals)
+  plot(aov.results, which=2)
+}
+almost_sas(m1)
+
+#count(data1$Metrics.Sales<1)
+data1$Metric.Sales_Cat = ifelse(data1$Metrics.Sales < 1, 0, 1)
+#count(data1$Metric.Sales_Cat)
+
+m2=glm(Metric.Sales_Cat~Type+Release.Rating+Solo+`Length.Main Story.Median`, data=data1, family = "binomial")
+summary(m2)
+
+ec0=round(exp(coefficients(m2)), 4)
+c0=coefficients(m2)
+
+```
+The residuals revealed the absence of normality in the linear regression model. Therefore, I decided to proceed with a binary logistic regression model. I divided Metric.Sales_Cat in two categories.  
+
+**Resulting model.**
+
+```{r}
+extract_eq(m2, use_coefs = TRUE)
+```
+
+**Significant predictors of total sales. Test at the** $\alpha=0.05$ level.
+
+```{r}
+fullType=glm(Metric.Sales_Cat~Type+Release.Rating+Solo+data1$`Length.Main Story.Median`, data=data1, family = "binomial")
+reducedType=glm(Metric.Sales_Cat~Release.Rating+Solo+data1$`Length.Main Story.Median`, data=data1, family = "binomial")
+anova(reducedType, fullType, test = "Chisq")
+
+fullRating=glm(Metric.Sales_Cat~Type+Release.Rating+Solo+data1$`Length.Main Story.Median`, data=data1, family = "binomial")
+reducedRating=glm(Metric.Sales_Cat~Type+Solo+data1$`Length.Main Story.Median`, data=data1, family = "binomial")
+anova(reducedRating, fullRating, test = "Chisq")
+
+fullSolo=glm(Metric.Sales_Cat~Type+Release.Rating+Solo+data1$`Length.Main Story.Median`, data=data1, family = "binomial")
+reducedSolo=glm(Metric.Sales_Cat~Type+Release.Rating+data1$`Length.Main Story.Median`, data=data1, family = "binomial")
+anova(reducedSolo, fullSolo, test = "Chisq")
+
+fullMedian=glm(Metric.Sales_Cat~Type+Release.Rating+Solo+data1$`Length.Main Story.Median`, data=data1, family = "binomial")
+reducedMedian=glm(Metric.Sales_Cat~Type+Release.Rating+Solo, data=data1, family = "binomial")
+anova(reducedMedian, fullMedian, test = "Chisq")
+```
+
+Our results show that Type is a significant predictor of Metric.Sales_Cat. We calculated p-value=0.01209, which is less than alpha=0.05.
+Our results reveal that Release Rating is a significant predictor of Metric.Sales.We calculated p-value=0.03714, which is less than alpha=0.05.
+Our results reveal that Solo is a significant predictor of Metric.Sales.We calculated p-value=0.02701, which is less than alpha=0.05.
+Our results show that Length.Main Story.Median is a significant predictor of Metric.Sales.We calculated p-value=0.005415, which is less than alpha=0.05.
+
+**I modeled total sales (*Metrics.Sales*; millions of dollars) as a function of console (*Release.Console*), rating (*Release.Rating*), number of players (*Features.Max.Players*), and the median length of the main storyline (*Length.Main.Story.Median*).**
+
+```{r}
+#count(data1$`Features.Max Players`)
+
+class(data1$Release.Console)
+#count(data1$Release.Console)
+data1$Release_Console_Numbered <- ifelse(data1$Release.Console == "Nintendo DS", 1,
+                                     ifelse(data1$Release.Console == "Nintendo Wii", 2,
+                                            ifelse(data1$Release.Console == "PlayStation 3", 3, 
+                                                   ifelse(data1$Release.Console == "Sony PSP", 4, 5))))
+#count(data1$Release_Console_Numbered)
+
+m3=glm(Metric.Sales_Cat~Release_Console_Numbered+Release.Rating+`Features.Max Players`+`Length.Main Story.Median`, data=data1, family = "binomial")
+summary(m3)
+
+c1=coefficients(m3)
+
+ec1=round(exp(coefficients(m3)), 4)
+```
+
+**Resulting model.**
+
+```{r}
+extract_eq(m3, use_coefs = TRUE)
+```
+
+**Significant predictors of total sales. Test at the** $\alpha=0.05$ level.
+
+```{r}
+fullRelCons=glm(Metric.Sales_Cat~Release_Console_Numbered+Release.Rating+data1$`Features.Max Players`+data1$`Length.Main Story.Median`, data=data1, family = "binomial")
+reducedRelCons=glm(Metric.Sales_Cat~Release.Rating+data1$`Features.Max Players`+data1$`Length.Main Story.Median`, data=data1, family = "binomial")
+anova(reducedRelCons, fullRelCons,  test = "Chisq")
+
+fullReRating=glm(Metric.Sales_Cat~Release_Console_Numbered+Release.Rating+data1$`Features.Max Players`+data1$`Length.Main Story.Median`, data=data1, family = "binomial")
+reducedReRating=glm(Metric.Sales_Cat~Release_Console_Numbered+data1$`Features.Max Players`+data1$`Length.Main Story.Median`, data=data1, family = "binomial")
+anova(reducedReRating, fullReRating,  test = "Chisq")
+
+fullMaxPlayers=glm(Metric.Sales_Cat~Release_Console_Numbered+Release.Rating+data1$`Features.Max Players`+data1$`Length.Main Story.Median`, data=data1, family = "binomial")
+reducedMaxPlayers=glm(Metric.Sales_Cat~Release_Console_Numbered+Release.Rating+data1$`Length.Main Story.Median`, data=data1, family = "binomial")
+anova(reducedMaxPlayers, fullMaxPlayers,  test = "Chisq")
+
+fullMSMedian=glm(Metric.Sales_Cat~Release_Console_Numbered+Release.Rating+data1$`Features.Max Players`+data1$`Length.Main Story.Median`, data=data1, family = "binomial")
+reducedMSMedian=glm(Metric.Sales_Cat~Release_Console_Numbered+Release.Rating+data1$`Features.Max Players`, data=data1, family = "binomial")
+anova(reducedMSMedian, fullMSMedian,  test = "Chisq")
+```
+
+Our results reveal that Release.Console is not a significant predictor of Metric.Sales_Cat. We calculated p-value=0.9865, which is greater than alpha=0.05.
+Our results reveal that Release.Rating is not a significant predictor of Metric.Sales_Cat.We calculated p-value=0.0558, which is greater than alpha=0.05.
+Our results reveal that Features.Max Players is a significant predictor of Metric.Sales_Cat.We calculated p-value=0.0007468, which is less than alpha=0.05.
+Our results reveal that Length.Main Story.Median is a significant predictor of Metric.Sales_Cat.We calculated p-value=0.007323, which is less than alpha=0.05.
+
+**I used leave-one-out cross validation to determine which model fits better.**
+
+```{r}
+set.seed(45)
+cv_error <- cv.glm(data1, m2)
+cv_error$delta
+
+set.seed(45)
+cv_error <- cv.glm(data1, m3)
+cv_error$delta
+```
+The results reveal that model 2 is a better fit. I calculated CV(n)= 0.1210499 0.1210490, which is smaller than m3 CV(n)=0.1225014 0.1225003. 
+
+**Summary**
+```{r}
+c0
+ec0
+```
+
+Consoles (Nintendo Wii, Xbox 360, and PlayStation 3) have 80% higher odds of reaching 1.0 in millions of dollars in Metric.Sales than handhelds (Nintendo DS and Sony PSP). On the other hand, Release.RatingM has 50% lower odds of reaching 1.0 in millions of dollars in Metric.Sales than Release.RatingE. Besides, Release.RatingT has 20% lower odds of reaching 1.0 in millions of dollars in Metric.Sales than Release.RatingE. Games that allow a Max.Players of 1 have 40% lower odds of reaching 1.0 in millions of dollars in Metric.Sales than games that support greater amount of Max.Players. Finally, for every unit increase in Length.Main Story.Median the odds of Metric.Sales reaching 1.0 in millions of dollars increase by 2%.    
+
+
+```{r}
+c0
+```
+
+**I constructed a data visualization for the model that fit better to aid in explaining model results.**
+
+```{r}
+
+data1=data1%>%mutate(
+ pred_lmsm=exp(c0[1]+c0[2]+c0[3]+c0[5]+c0[6]*`Length.Main Story.Median` )/(1+exp(c0[1]+c0[2]+c0[3]+c0[5]+c0[6]*`Length.Main Story.Median` ))
+)
+
+data1 %>% ggplot(aes(x =`Length.Main Story.Median` , y =Metric.Sales_Cat )) +
+geom_point() +
+geom_line(aes(y = pred_lmsm), color="red")
+ 
+```
+The graphic support the interpretation that for every unit increase in the length of main story median the odds of Metric.Sales of reaching 1.0 in millions of dollars increase.  
+
+**Hospital safety data here: <https://corgis-edu.github.io/corgis/csv/hospitals/>.**
+
+```{r}
+hospitals <- read_csv("hospitals.csv")
+```
+
+**I am interested in analyzing data from hospitals that are *not* of unknown or proprietary facility type (*Facility.Type*). I performed the appropriate data management steps to create a subset of data meeting this criteria.**
+
+```{r}
+data2=hospitals%>%dplyr::select(
+  Facility.Type,
+  Rating.Safety,
+  `Procedure.Heart Attack.Cost`
+)%>%
+  na.omit()
+
+#count(data2$Facility.Type)
+class(data2$Facility.Type)
+
+data2 = subset(data2, Facility.Type != "Unknown" & Facility.Type != "Proprietary")
+#count(data2$Facility.Type)
+
+class(data2$Facility.Type)
+
+```
+
+**First, I modeled the safety ratings (*Rating.Safety*) that are *either* above or below the national average as a function of facility type (I used private as the reference group), cost of heart attack procedure, and the interaction between facility type and cost of heart attack procedure.**
+
+```{r}
+#count(data2$Rating.Safety)
+class(data2$Rating.Safety)
+data2 = subset(data2, Rating.Safety != "None" & Rating.Safety != "Same")
+#count(data2$Rating.Safety)
+data2$Rating.Safety = ifelse(data2$Rating.Safety == "Above", 0, 1)
+
+data2 = dummy_cols(data2, select_columns = c("Facility.Type"))
+
+data2=data2%>%filter(data2$`Procedure.Heart Attack.Cost`>0)
+class(data2$`Procedure.Heart Attack.Cost`)
+
+m4=glm(Rating.Safety~Facility.Type_Church+Facility.Type_Government+`Procedure.Heart Attack.Cost`+Facility.Type_Church:`Procedure.Heart Attack.Cost`+Facility.Type_Government:`Procedure.Heart Attack.Cost`, data=data2, family = "binomial")
+
+summary(m4)
+
+c2=coefficients(m4)
+ec2=round(exp(coefficients(m4)), 4)
+
+ec2
+```
+
+**Resulting model.**
+
+```{r}
+extract_eq(m4, use_coefs = TRUE)
+```
+
+**Significant predictors of safety rating. Test at the** $\alpha=0.05$ level.
+
+```{r}
+fullChurch=glm(Rating.Safety~Facility.Type_Church+Facility.Type_Government+`Procedure.Heart Attack.Cost`+Facility.Type_Church:`Procedure.Heart Attack.Cost`+Facility.Type_Government:`Procedure.Heart Attack.Cost`, data=data2, family = "binomial")
+
+reducedCurch=glm(Rating.Safety~Facility.Type_Government+`Procedure.Heart Attack.Cost`+Facility.Type_Church:`Procedure.Heart Attack.Cost`+Facility.Type_Government:`Procedure.Heart Attack.Cost`, data=data2, family = "binomial")
+anova(reducedCurch, fullChurch, test = "Chisq")
+
+
+fullGovernment=glm(Rating.Safety~Facility.Type_Church+Facility.Type_Government+`Procedure.Heart Attack.Cost`+Facility.Type_Church:`Procedure.Heart Attack.Cost`+Facility.Type_Government:`Procedure.Heart Attack.Cost`, data=data2, family = "binomial")
+
+reducedGovernment=glm(Rating.Safety~Facility.Type_Church+`Procedure.Heart Attack.Cost`+Facility.Type_Church:`Procedure.Heart Attack.Cost`+Facility.Type_Government:`Procedure.Heart Attack.Cost`, data=data2, family = "binomial")
+anova(reducedGovernment, fullGovernment, test = "Chisq")
+
+
+fullPHAC=glm(Rating.Safety~Facility.Type_Church+Facility.Type_Government+`Procedure.Heart Attack.Cost`+Facility.Type_Church:`Procedure.Heart Attack.Cost`+Facility.Type_Government:`Procedure.Heart Attack.Cost`, data=data2, family = "binomial")
+
+reducedPHAC=glm(Rating.Safety~Facility.Type_Church+Facility.Type_Government+Facility.Type_Church:`Procedure.Heart Attack.Cost`+Facility.Type_Government:`Procedure.Heart Attack.Cost`, data=data2, family = "binomial")
+anova(reducedPHAC, fullPHAC, test = "Chisq")
+
+fullChurchPHAC=glm(Rating.Safety~Facility.Type_Church+Facility.Type_Government+`Procedure.Heart Attack.Cost`+Facility.Type_Church:`Procedure.Heart Attack.Cost`+Facility.Type_Government:`Procedure.Heart Attack.Cost`, data=data2, family = "binomial")
+
+reducedChurchPHAC=glm(Rating.Safety~Facility.Type_Church+Facility.Type_Government+`Procedure.Heart Attack.Cost`+Facility.Type_Government:`Procedure.Heart Attack.Cost`, data=data2, family = "binomial")
+anova(reducedChurchPHAC, fullChurchPHAC, test = "Chisq")
+
+
+fullGovernmentPHAC=glm(Rating.Safety~Facility.Type_Church+Facility.Type_Government+`Procedure.Heart Attack.Cost`+Facility.Type_Church:`Procedure.Heart Attack.Cost`+Facility.Type_Government:`Procedure.Heart Attack.Cost`, data=data2, family = "binomial")
+
+reducedGovernmentPHAC=glm(Rating.Safety~Facility.Type_Church+Facility.Type_Government+`Procedure.Heart Attack.Cost`+Facility.Type_Church:`Procedure.Heart Attack.Cost`, data=data2, family = "binomial")
+anova(reducedGovernmentPHAC, fullGovernmentPHAC, test = "Chisq")
+
+
+coeftest(m4)
+```
+I calculated all the p-values for all the predictors. They were all greater than alpha=0.05. Thus, I concluded that none of the predictors were significant predictors of Rating.Safety.
+
+**I stratified the model into two models - separated into a model for the cost of a heart attack procedure to be \$23,000 and another model for the cost of a heart attack procedure to be \$27,000.**
+
+```{r}
+c2
+ec2
+
+data2=data2%>%mutate(
+ pred_23000=exp(c2[1]+c2[3]+c2[4]*23000)/(1+exp(c2[1]+c2[3]+c2[4]*23000)),
+ pred_27000=exp(c2[1]+c2[3]+c2[4]*27000)/(1+exp(c2[1]+c2[3]+c2[4]*27000))
+)
+```
+
+$$
+\log\left[ \frac { \widehat{P( \operatorname{Goverment}_{27000\operatorname{}} = \operatorname{1} )} }{ 1 - \widehat{P( \operatorname{Government}_{27000\operatorname{}\operatorname{}} = \operatorname{1} )} } \right] = -0.25 - 0.84(\operatorname{Facility.Type.Government})
+$$
+$$
+\log\left[ \frac { \widehat{P( \operatorname{Goverment}_{27000\operatorname{}} = \operatorname{1} )} }{ 1 - \widehat{P( \operatorname{Government}_{27000\operatorname{}\operatorname{}} = \operatorname{1} )} } \right] = -0.37 - 0.84(\operatorname{Facility.Type.Government})
+$$
+```{r}
+exp27000=exp(c(-0.25, -0.84))
+exp27000
+
+exp23000=exp(c(-5.3, -0.84))
+exp23000
+```
+**Summary and interpretations of the slopes!**
+
+Facility.Type.Goverment with a Procedure.Heart Attack.Cost of 27000 dollars, has 57% lower odds of reaching a below national average Rating.Saefty than a Facility.Type.Private. On the other hand, for Facility.Type.Government with a Procedure.Heart Attack.Cost of 23000 dollars, has 57% lower odds of reaching a below national average Rating.Saefty than a Facility.Type.Private.
+
+**Next, I modeled the safety ratings (*Rating.Safety*) that are above, the same as, or below the national average as a function of facility type (I used private as the reference group), cost of heart attack procedure, and the interaction between facility type and cost of heart attack procedure.**
+
+```{r}
+
+data3=hospitals%>%dplyr::select(
+  Rating.Safety,
+  Facility.Type,
+  `Procedure.Heart Attack.Cost`
+)%>%
+  na.omit()
+
+#count(data3$Rating.Safety)
+data3 = subset(data3, Rating.Safety != "None")
+#count(data3$Rating.Safety)
+
+#count(data3$Facility.Type)
+data3 = subset(data3, Facility.Type != "Unknown" & Facility.Type != "Proprietary")
+#count(data3$Facility.Type)
+
+data3$Rating.Safety=as.factor(data3$Rating.Safety)
+#count(data3$Rating.Safety)
+
+data3 <- data3 %>% filter(data3$`Procedure.Heart Attack.Cost` > 0)
+#count(data3$`Procedure.Heart Attack.Cost`)
+
+
+data3 = dummy_cols(data3, select_columns = c("Facility.Type"))
+
+m5=polr(Rating.Safety~Facility.Type_Church+Facility.Type_Government+`Procedure.Heart Attack.Cost`+Facility.Type_Church:`Procedure.Heart Attack.Cost`+Facility.Type_Government:`Procedure.Heart Attack.Cost`, data=data3,  Hess = TRUE)
+summary(m5)
+
+c3=coefficients(m5)
+ec3=round(exp(coefficients(m5)), 4)
+
+```
+
+**Resulting model.**
+
+```{r}
+extract_eq(m5, use_coefs = TRUE)
+```
+
+**Significant predictors of safety rating. Test at the** $\alpha=0.05$ level.
+
+```{r}
+fullFacility_TypeCh= polr(Rating.Safety~Facility.Type_Church+Facility.Type_Government+`Procedure.Heart Attack.Cost`+Facility.Type_Church:`Procedure.Heart Attack.Cost`+Facility.Type_Government:`Procedure.Heart Attack.Cost`, data=data3,  Hess = TRUE)
+
+reducedFacility_TypeCh=polr(Rating.Safety~Facility.Type_Government+`Procedure.Heart Attack.Cost`+Facility.Type_Church:`Procedure.Heart Attack.Cost`+Facility.Type_Government:`Procedure.Heart Attack.Cost`, data=data3,  Hess = TRUE)
+anova(reducedFacility_TypeCh, fullFacility_TypeCh, test = "Chisq")
+
+fullFacility_TypeGov= polr(Rating.Safety~Facility.Type_Church+Facility.Type_Government+`Procedure.Heart Attack.Cost`+Facility.Type_Church:`Procedure.Heart Attack.Cost`+Facility.Type_Government:`Procedure.Heart Attack.Cost`, data=data3,  Hess = TRUE)
+
+reducedFacility_TypeGov= polr(Rating.Safety~Facility.Type_Church+`Procedure.Heart Attack.Cost`+Facility.Type_Church:`Procedure.Heart Attack.Cost`+Facility.Type_Government:`Procedure.Heart Attack.Cost`, data=data3,  Hess = TRUE)
+anova(reducedFacility_TypeGov, fullFacility_TypeGov, test = "Chisq")
+
+
+fullHeart_AttackCost= polr(Rating.Safety~Facility.Type_Church+Facility.Type_Government+`Procedure.Heart Attack.Cost`+Facility.Type_Church:`Procedure.Heart Attack.Cost`+Facility.Type_Government:`Procedure.Heart Attack.Cost`, data=data3,  Hess = TRUE)
+
+reducedHeart_AttackCost= polr(Rating.Safety~Facility.Type_Church+Facility.Type_Government+Facility.Type_Church:`Procedure.Heart Attack.Cost`+Facility.Type_Government:`Procedure.Heart Attack.Cost`, data=data3,  Hess = TRUE)
+anova(reducedHeart_AttackCost, fullHeart_AttackCost, test = "Chisq")
+
+fullInt1= polr(Rating.Safety~Facility.Type_Church+Facility.Type_Government+`Procedure.Heart Attack.Cost`+Facility.Type_Church:`Procedure.Heart Attack.Cost`+Facility.Type_Government:`Procedure.Heart Attack.Cost`, data=data3,  Hess = TRUE)
+
+reducedInt1= polr(Rating.Safety~Facility.Type_Church+Facility.Type_Government+`Procedure.Heart Attack.Cost`+Facility.Type_Government:`Procedure.Heart Attack.Cost`, data=data3,  Hess = TRUE)
+anova(reducedInt1, fullInt1, test = "Chisq")
+
+fullInt2= polr(Rating.Safety~Facility.Type_Church+Facility.Type_Government+`Procedure.Heart Attack.Cost`+Facility.Type_Church:`Procedure.Heart Attack.Cost`+Facility.Type_Government:`Procedure.Heart Attack.Cost`, data=data3,  Hess = TRUE)
+
+reducedInt2= polr(Rating.Safety~Facility.Type_Church+Facility.Type_Government+`Procedure.Heart Attack.Cost`+Facility.Type_Church:`Procedure.Heart Attack.Cost`, data=data3,  Hess = TRUE)
+anova(reducedInt2, fullInt2, test = "Chisq")
+
+coeftest(m5)
+
+```
+I calculated all the p-values for all the predictors. They were all greater than alpha=0.05. Thus, I concluded that none of the predictors were significant predictors of Rating.Safety.
+
+**I stratified the model into two models - separated into a model for the cost of a heart attack procedure to be \$23,000 and another model for the cost of a heart attack procedure to be \$27,000.**
+
+```{r}
+c3
+
+data3=data3%>%mutate(
+ pred_23000=exp(c3[2]+c3[4]*23000)/(1+exp(c3[2]+c3[4]*23000)),
+ pred_27000=exp(c3[2]+c3[4]*27000)/(1+exp(c3[2]+c3[4]*27000))
+)
+```
+$$
+\begin{aligned}
+\log\left[ \frac { P( \operatorname{Above} \geq \operatorname{Below} ) }{ 1 - P( \operatorname{Above} \geq \operatorname{Below} ) } \right] &= 1 - 1.69(\operatorname{Facility.Type\_Government}) \\
+\log\left[ \frac { P( \operatorname{Below} \geq \operatorname{Same} ) }{ 1 - P( \operatorname{Below} \geq \operatorname{Same} ) } \right] &= 2.93  - 1.69(\operatorname{Facility.Type\_Government})
+\end{aligned}
+$$
+$$
+\begin{aligned}
+\log\left[ \frac { P( \operatorname{Above} \geq \operatorname{Below} ) }{ 1 - P( \operatorname{Above} \geq \operatorname{Below} ) } \right] &= 0.92 - 1.69(\operatorname{Facility.Type\_Government}) \\
+\log\left[ \frac { P( \operatorname{Below} \geq \operatorname{Same} ) }{ 1 - P( \operatorname{Below} \geq \operatorname{Same} ) } \right] &= 2.85  - 1.69(\operatorname{Facility.Type\_Government})
+\end{aligned}
+$$
+```{r}
+exp27000=exp(c(-2.93, -1.69))
+exp27000
+
+exp23000=exp(c(2.85, -1.69))
+exp23000
+
+```
+
+
+**Summary relaying the results of the model and interpretations of the slopes**
+
+For any Rating.Safety, the estimated odds that a Facility.Type.Government with a Procedure.Heart Attack.Cost of 27000 dollars is in the Same National.Average.Rating.Safety direction rather than the Above direction has 82% lower odds than for Private.Facility.Type. On the other hand, for any Rating.Safety, the estimated odds that a Facility.Type.Government with a Procedure.Heart Attack.Cost of 23000 dollars is in the Same National.Average.Rating.Safety direction rather than the Above direction has 82% lower odds than for Private.Facility.Type 
+
+**Comparison of the two models above (binary and ordinal models).**
+
+```{r}
+c2
+ec2
+
+c3
+ec3
+
+```
+For the binary model, Facility.Type_Church has 90% less odds of reaching a Below Rating.Safety than a Facility.Type.Private.Additionally, Facility.Type_Government has 57% less odds of reaching a Below Rating.Safety than a Facility.Type.Private. Finally, for every dollars increase in the Procedure.Heart Attack.Cost the odds of reaching a Below.Rating.Safety increases by approximately 0%. On the other hand, for the ordinal model, Facility.Type_Church has 33% more odds of going from Above to Below and below to Same Rating.Safety than a Facility.Type.Private. Regarding Facility.Type_Government has 82% less odds of going from Above to Below and below to Same Rating.Safety than a Facility.Type.Private. Finally, for every dollar increase in Procedure.Heart Attack.Cost the odds of going from Above to Below and below to Same Rating.Safety increases by approximately 0%. 
+
+
+
+**The heart attack procedure cost (*Procedure.Heart.Attack.Cost*) has a lot of \$0 values. I did the appropriate data manipulation to remove the zeroes.**
+
+```{r}
+data4=hospitals%>%dplyr::select(
+ `Procedure.Heart Attack.Cost`,
+ Facility.Type,
+ Rating.Safety,
+ Rating.Effectiveness,
+ Rating.Imaging,
+ Rating.Mortality,
+ Rating.Overall
+)%>%
+  na.omit()
+
+data4 <- data4 %>% filter(data4$`Procedure.Heart Attack.Cost` > 0)
+#count(data4$`Procedure.Heart Attack.Cost`)
+
+```
+
+**I analyzed only hospitals with safety ratings (*Ratings.Safety*), effectiveness ratings (*Rating.Effectiveness*), and imaging ratings (*Rating.Imaging*). I performed the appropriate data manipulation to exclude those with a rating of "None."**
+
+```{r}
+#count(data4$Rating.Safety)
+data4 = subset(data4, Rating.Safety != "None")
+#count(data4$Rating.Safety)
+class(data4$Rating.Safety)
+
+#count(data4$Rating.Effectiveness)
+data4 = subset(data4, Rating.Effectiveness != "None")
+#count(data4$Rating.Effectiveness)
+class(data4$Rating.Effectiveness)
+
+#count(data4$Rating.Imaging)
+data4 = subset(data4, Rating.Imaging != "None")
+#count(data4$Rating.Imaging)
+class(data4$Rating.Imaging)
+
+```
+
+**I modeled the updated heart attack procedure cost as a function of the facility type (I used private as the reference group), the mortality rating (*Rating.Mortality*), the safety ratings, and the effectiveness ratings (*Rating.Effectiveness*).**
+
+```{r}
+#count(data4$Facility.Type)
+data4 = subset(data4, Facility.Type != "Unknown" & Facility.Type != "Proprietary")
+data4$Facility.Type = factor(data4$Facility.Type, levels = c("Private", "Church", "Government"))
+#count(data4$Facility.Type)
+class(data4$Facility.Type)
+
+data4$Rating_Safety_Numbered =- ifelse(data4$Rating.Safety == "Below", 1, ifelse(data1$Release.Console == "Same", 2, 3))
+
+data4$Rating_Effectiveness_Numbered = ifelse(data4$Rating.Effectiveness == "Below", 1, ifelse(data1$Release.Console == "Same", 2, 3))
+
+#count(data4$Rating.Mortality)
+class(data4$Rating.Mortality)
+data4$Rating_Mortality_Numbered = ifelse(data4$Rating.Mortality == "Above", 1, ifelse(data1$Release.Console == "Same", 2, 3))
+
+
+m6=lm(`Procedure.Heart Attack.Cost`~Facility.Type+Rating_Mortality_Numbered+Rating_Safety_Numbered+Rating_Effectiveness_Numbered,data=data4)
+
+almost_sas(m6)
+
+data4$Procedure_Heart_Attack_Cost_Cat <- ifelse(data4$`Procedure.Heart Attack.Cost` < 22894, 0, 1)
+#count(data4$Procedure_Heart_Attack_Cost_Cat)
+
+model7=glm(Procedure_Heart_Attack_Cost_Cat~Facility.Type+Rating_Mortality_Numbered+Rating_Safety_Numbered+Rating_Effectiveness_Numbered,data=data4, family="binomial")
+summary(model7)
+
+```
+The residual graph for the linear regression model revealed the absence of a cloud shape in the Residual v/s Fitted graph. Thus I decided to proceed with a binomial regression model by splitting `Procedure.Heart Attack.Cost` in two categories.
+
+**Resulting model.**
+
+```{r}
+extract_eq(model7, use_coefs = TRUE)
+```
+
+**Significant predictors of heart attack procedure cost. Test at the** $\alpha=0.05$ level.
+
+```{r}
+fullFacility_Type=glm(Procedure_Heart_Attack_Cost_Cat~Facility.Type+Rating_Mortality_Numbered+Rating_Safety_Numbered+Rating_Effectiveness_Numbered,data=data4, family="binomial")
+reducedFacility_Type=glm(Procedure_Heart_Attack_Cost_Cat~Rating_Mortality_Numbered+Rating_Safety_Numbered+Rating_Effectiveness_Numbered, data=data4, family="binomial")
+anova(reducedFacility_Type, fullFacility_Type, test = "Chisq" )
+
+fullRating_Mortality=glm(Procedure_Heart_Attack_Cost_Cat~Facility.Type+Rating_Mortality_Numbered+Rating_Safety_Numbered+Rating_Effectiveness_Numbered, data=data4, family="binomial")
+reducedRating_Mortality=glm(Procedure_Heart_Attack_Cost_Cat~Facility.Type+Rating_Safety_Numbered+Rating_Effectiveness_Numbered, data=data4, family="binomial")
+anova(reducedRating_Mortality, fullRating_Mortality, test = "Chisq" )
+
+fullRating_Safety=glm(Procedure_Heart_Attack_Cost_Cat~Facility.Type+Rating_Mortality_Numbered+Rating_Safety_Numbered+Rating_Effectiveness_Numbered, data=data4, family="binomial")
+reducedRating_Safety=glm(Procedure_Heart_Attack_Cost_Cat~Facility.Type+Rating_Mortality_Numbered+Rating_Effectiveness_Numbered, data=data4, family="binomial")
+anova(reducedRating_Safety, fullRating_Safety, test = "Chisq")
+
+fullRating_Effectiveness=glm(Procedure_Heart_Attack_Cost_Cat~Facility.Type+Rating_Mortality_Numbered+Rating_Safety_Numbered+Rating_Effectiveness_Numbered, data=data4, family="binomial")
+reducedRating_Effectiveness=glm(Procedure_Heart_Attack_Cost_Cat~Facility.Type+Rating_Mortality_Numbered+Rating_Safety_Numbered, data=data4, family="binomial")
+anova(reducedRating_Effectiveness, fullRating_Effectiveness, test = "Chisq" )
+
+coeftest(model7)
+
+```
+I calculated p-value for all the predictors. Except for Rating_Effectiveness_Numbered, they were all greater than alpha=0.05. Thus, I concluded that they were not significant predictors of Procedure_Heart_Attack_Cost_Cat. On the other hand,  Rating_Effectiveness_Numbered, I calculated p-value=0.0325, which is less than alpha=0.05.Thus, I concluded that it is a significant predictor of Procedure_Heart_Attack_Cost_Cat.
+
+**Now I am analyzing only hospitals with overall ratings (*Overall.Rating*).**
+
+```{r}
+#count(data4$Rating.Overall)
+data4 <- data4 %>% filter(data4$Rating.Overall > 0)
+#count(data4$Rating.Overall)
+class(data4$Rating.Overall)
+```
+
+**I Modeled the updated heart attack procedure cost as a function of the facility type (I used private as the reference group), and the overall rating.**
+
+```{r}
+model8=lm(`Procedure.Heart Attack.Cost`~Facility.Type+Rating.Overall,data=data4)
+almost_sas(model8)
+
+m8=glm(Procedure_Heart_Attack_Cost_Cat~Facility.Type+Rating.Overall,data=data4, family = "binomial")
+summary(m8)
+
+```
+
+**Resulting model.**
+
+```{r}
+extract_eq(m8, use_coefs = TRUE)
+```
+
+**Significant predictors of heart attack procedure cost. Test at the** $\alpha=0.05$ level.
+
+```{r}
+fullFacType=glm(Procedure_Heart_Attack_Cost_Cat~Facility.Type+Rating.Overall,data=data4, family = "binomial")
+reducedFacType=glm(Procedure_Heart_Attack_Cost_Cat~Rating.Overall,data=data4, family = "binomial")
+anova(reducedFacType, fullFacType, test="Chisq")
+
+fullRatOverall=glm(Procedure_Heart_Attack_Cost_Cat~Facility.Type+Rating.Overall,data=data4, family = "binomial")
+reducedRatOverall=glm(Procedure_Heart_Attack_Cost_Cat~Facility.Type,data=data4, family = "binomial")
+anova(reducedRatOverall, fullRatOverall, test="Chisq")
+
+coeftest(m8)
+
+```
+
+For Facility.Type I calculated p-value= 0.1393, which is greater than alpha=0.05.
+Thus I concluded that it is not a significant predictor of Procedure_Heart_Attack_Cost_Cat.
+
+For Rating.Overall I calculated p-value=0.0417, which is less than alpha=0.05.
+Thus I concluded that it is a significant predictor of Procedure_Heart_Attack_Cost_Cat.
+
+**I used 10-fold cross validation to determine if the better model."**
+
+```{r}
+set.seed(90100)
+cv_errormodel7k10 <- cv.glm(data4, model7, K=10)
+cv_errormodel7k10$delta
+
+set.seed(90100)
+cv_errorm8k10 <- cv.glm(data4, m8, K=10)
+cv_errorm8k10$delta
+```
+
+I calculated the CV(k=10) of model7 and m8 (model7=0.1951700 0.1950764; m8=0.1949602 0.1948881).
+In this case model7 CV(k=10) > m8 CV(k=10).
+Thus, I concluded that m8 fits better than model7.
+
+**Summary relaying the results of the model and interpretations of the slopes!**
+
+```{r}
+
+c4=coefficients(m8)
+c4
+
+ec4=round(exp(coefficients(m8)), 4)
+ec4
+
+```
+A Facility.TypeChurch has 4% less odds of reaching a Procedure.Heart.Attack.Cost of reaching 24045 dollars than a Facility.TypePrivate. In addition, a Facility.TypeGovernment has 28% less odds of reaching a Procedure.Heart.Attack.Cost of 24045 dollars than a Facility.TypePrivate. Finally for every unit increase in Rating.Overall the odds of Procedure.Heart.Attack.Cost of reaching 24045 dollars decreases by 10%. Th graphic bellow shows the relationship between Rating.Overall and Procedure.Heart.Attack.Cost.  
+
+**For the model that fit best, I constructed a data visualization to aid in explaining model results.**
+
+```{r}
+
+data4=data4%>%mutate(
+  pred_R_O=exp(c4[1]+c4[3]+c4[4]*Rating.Overall)/(1+exp(c4[1]+c4[3]+c4[4]*Rating.Overall)),
+)
+
+ggplot(data4, aes(x=Rating.Overall, y=Procedure_Heart_Attack_Cost_Cat))+ 
+  geom_point()+
+  geom_line(aes(y = pred_R_O), linetype = "solid", color="red")+
+ theme_bw()
+```
+
+**Billionaire data here: <https://corgis-edu.github.io/corgis/csv/billionaires/>.**
+
+```{r, echo = TRUE}
+billionaires <- read_csv("billionaires.csv")
+```
+
+**I wanted to figure out how "old" their money is using information from *wealth.how.inherited*. First, I excluded those that inherited money from their spouse. Then, if the money was not inherited, I assigned a 1. If they received the money from a parent, I assigned a 2. From there, I assigned the appropriate generation number. This resulted in a variable that spans 1 to 5.**
+
+```{r}
+data6=billionaires%>%dplyr::select(
+  wealth.how.inherited,
+ `wealth.worth in billions`,
+  demographics.age,
+ demographics.gender
+)%>%
+  na.omit()
+
+#count(data6$wealth.how.inherited)
+data6=subset(data6, wealth.how.inherited != "spouse/widow")
+data6$wealth.how.inherited <- ifelse(data6$wealth.how.inherited == "not inherited", 1,
+                                     ifelse(data6$wealth.how.inherited == "father", 2,
+                                            ifelse(data6$wealth.how.inherited == "3rd generation", 3, 
+                                                   ifelse(data6$wealth.how.inherited == "4th generation", 4, 5))))
+
+#count(data6$wealth.how.inherited)
+
+```
+
+**Second, I converted the wealth (*wealth.worth.in.billions*) into \$1 increments. Currently, it's in billions... if I wanted it in terms of \$1, I needed to multiply by 1 billion.**
+
+```{r}
+data6$`wealth.worth in billions` = data6$`wealth.worth in billions` * 1000000000
+```
+
+**I modeled the worth of the billionaire (*wealth.worth.in.billions*) as a function of the age of the billionaire (*demographics.age*), biological sex of the billionaire (*demographics.gender*), age of wealth (the variable from problem 4a), and the interaction between the age of the billionaire and the age of their wealth.**
+
+```{r}
+#count(data6$`wealth.worth in billions`)
+hist(data6$`wealth.worth in billions`)
+
+#count(data6$demographics.gender)
+class(data6$demographics.gender)
+data6$demographics.gender=as.factor(data6$demographics.gender)
+
+#count(data6$demographics.age)
+data6 = data6 %>% filter(data6$demographics.age > 0)
+#count(data6$demographics.age)
+
+
+m12=lm(`wealth.worth in billions`~demographics.age+demographics.gender+wealth.how.inherited+demographics.age:wealth.how.inherited, data=data6)
+almost_sas(m12)
+
+data6$wealth_worth_group <- ifelse(data6$`wealth.worth in billions` < 2.90e+09, 1,
+                  ifelse(data6$`wealth.worth in billions` < 4.90e+09, 2,
+                  ifelse(data6$`wealth.worth in billions` < 6.90e+09, 3,
+                  ifelse(data6$`wealth.worth in billions` < 9.10e+09, 4,
+                  ifelse(data6$`wealth.worth in billions` < 1.15e+10, 5,
+                  ifelse(data6$`wealth.worth in billions` < 1.47e+10, 6,
+                  ifelse(data6$`wealth.worth in billions` < 1.84e+10, 7, 8)))))))
+
+#count(data6$wealth_worth_group)
+hist(data6$wealth_worth_group)
+
+mean(data6$wealth_worth_group)
+var(data6$wealth_worth_group)
+
+m13 <- glm.nb(wealth_worth_group ~ demographics.age + demographics.gender + wealth.how.inherited + demographics.age:wealth.how.inherited,data = data6)
+summary(m13)
+```
+The residual graphics revealed the absence of normality in our linear regression model. Thus, I proceeded with a negative binomial regression model. I grouped wealth.worth in billions in eight groups. 
+
+**Resulting model.**
+```{r}
+extract_eq(m13, use_coefs = TRUE)
+```
+```{r}
+plot(m13, which = 4)
+
+m14 <- glm.nb(wealth_worth_group ~ demographics.age + demographics.gender + wealth.how.inherited ,data = data6)
+vif(m14)
+
+```
+I checked for outliers. I found three outliers. On the other hand I calculated vif<10. Thus, I concluded that there is not multicolinearity in our model. 
+
+**Significant predictors of wealth. Test at the** $\alpha=0.05$ level.
+```{r}
+fullage=glm.nb(wealth_worth_group ~ demographics.age + demographics.gender + wealth.how.inherited + demographics.age:wealth.how.inherited,
+           data = data6)
+reducedage=glm.nb(wealth_worth_group ~  demographics.gender + wealth.how.inherited + demographics.age:wealth.how.inherited,
+           data = data6)
+anova(reducedage, fullage, test="Chisq")
+
+
+fullgender=glm.nb(wealth_worth_group ~ demographics.age + demographics.gender + wealth.how.inherited + demographics.age:wealth.how.inherited,
+           data = data6)
+reducedgender=glm.nb(wealth_worth_group ~ demographics.age + wealth.how.inherited + demographics.age:wealth.how.inherited,
+           data = data6)
+anova(reducedgender, fullgender, test="Chisq")
+
+
+fullinheritance=glm.nb(wealth_worth_group ~ demographics.age + demographics.gender + wealth.how.inherited + demographics.age:wealth.how.inherited,
+           data = data6)
+reducedinheritance=glm.nb(wealth_worth_group ~ demographics.age + demographics.age:wealth.how.inherited,
+           data = data6)
+anova(reducedinheritance, fullinheritance, test="Chisq")
+
+
+fullINT=glm.nb(wealth_worth_group ~ demographics.age + demographics.gender + wealth.how.inherited + demographics.age:wealth.how.inherited,
+           data = data6)
+reducedINT=glm.nb(wealth_worth_group ~ demographics.age + demographics.gender + wealth.how.inherited + demographics.age:wealth.how.inherited,
+           data = data6)
+anova(reducedINT, fullINT, test="Chisq")
+
+coeftest(m13)
+```
+I calculated p-value for all the predictors. They were all greater than alpha=0.05. Thus, I concluded that none of the predictors were significant predictors of wealth_worth_group. 
+
+**I wrote a brief summary paragraph relaying the results of the model; I included proper interpretations of the slopes.**
+
+```{r}
+c5=coefficients(m13)
+c5 
+
+ec5=round(exp(coefficients(m13)), 4)
+ec5
+
+data6=data6%>%mutate(
+  pred_1 = exp(c5[1]+c5[2]*demographics.age +c5[3]*1+c5[4]*mean(data6$wealth.how.inherited))
+)
+```
+For every year increase the expected count of wealth_worth increases by 0.047%. Males are expected to have 4% less wealth worth than females. As the wealth.how.inherited 
+increases in a scale from not inherited to father, 3rd generation, 4th generation, and 5th generation the expected count of wealth worth decreases by 7%. 
+
+**I constructed a data visualization to aid in explaining model results.**
+
+```{r}
+data6 %>% ggplot(aes(x = demographics.age)) +
+geom_point(aes(y = wealth_worth_group)) +
+geom_line(aes(y = pred_1), color = "black") +
+  theme_bw()
+```
+
+**Conclusions.**
+
+The data has great amount of missing values, represented in zeros or unknown information. This can cause an alteration in normality. All of the models in our analysis were not normally distributed. Thus, we had to modify the variables in order to obtain predictions as accurate as possible. 
